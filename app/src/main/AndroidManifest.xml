@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.socks5setter">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application android:label="Socks5Setter" android:exported="true">
+        <receiver android:name=".SetProxyReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.socks5setter.SET_PROXY"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
