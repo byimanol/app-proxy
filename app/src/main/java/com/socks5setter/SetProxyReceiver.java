@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.util.Log;
 
 public class SetProxyReceiver extends BroadcastReceiver {
     @Override
@@ -14,14 +13,13 @@ public class SetProxyReceiver extends BroadcastReceiver {
         String user = intent.getStringExtra("user");
         String pass = intent.getStringExtra("pass");
 
-        Log.d("Socks5Setter", "host=" + host + " port=" + port);
-
         SharedPreferences prefs = ctx.getSharedPreferences("proxy_config", Context.MODE_PRIVATE);
         prefs.edit()
             .putString("host", host)
             .putInt("port", port)
             .putString("user", user)
             .putString("pass", pass)
+            .putBoolean("connected", true)
             .apply();
     }
 }
