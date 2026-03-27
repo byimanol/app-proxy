@@ -1,14 +1,16 @@
 package com.socks5setter;
 
 import android.app.Activity;
-import android.content.Intent;
-import android.content.SharedPreferences;
+import android.content.*;
 import android.net.VpnService;
 import android.os.Bundle;
+import android.os.Handler;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
     private static final int VPN_REQUEST = 1;
+    private Handler handler = new Handler();
+    private Runnable refreshRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -18,13 +20,26 @@ public class MainActivity extends Activity {
         if (getIntent().getBooleanExtra("request_vpn", false)) {
             requestVpnPermission();
         }
-        updateUI();
+
+        refreshRunnable = new Runnable() {
+            @Override
+            public void run() {
+                updateUI();
+                handler.postDelayed(this, 1000);
+            }
+        };
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        updateUI();
+        handler.post(refreshRunnable);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(refreshRunnable);
     }
 
     private void requestVpnPermission() {
@@ -46,7 +61,6 @@ public class MainActivity extends Activity {
     private void startVpnService() {
         Intent intent = new Intent(this, Socks5VpnService.class);
         startService(intent);
-        updateUI();
     }
 
     private void updateUI() {
