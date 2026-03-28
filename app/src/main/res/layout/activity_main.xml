@@ -27,7 +27,7 @@
 
     <TextView
         android:id="@+id/info"
-        android:text="Servidor: No configurado\nPuerto: 0\nUsuario: "
+        android:text="Envía configuración por ADB"
         android:textSize="14sp"
         android:textColor="#BBBBBB"
         android:lineSpacingExtra="8dp"

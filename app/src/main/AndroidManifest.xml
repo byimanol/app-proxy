@@ -1,27 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.socks5setter">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="net.typeblog.socks"
+    tools:ignore="GoogleAppIndexingWarning,UnusedAttribute">
+
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.BIND_VPN_SERVICE"/>
-    <application android:label="Socks5Setter" android:theme="@android:style/Theme.Material.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true">
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme"
+        android:extractNativeLibs="true"
+        android:fullBackupContent="@xml/backup_descriptor"
+        android:dataExtractionRules="@xml/data_extraction_rules">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <receiver android:name=".SetProxyReceiver" android:exported="true">
-            <intent-filter>
-                <action android:name="com.socks5setter.SET_PROXY"/>
-            </intent-filter>
-        </receiver>
+
         <service
-            android:name=".Socks5VpnService"
+            android:name=".SocksVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
+            android:process=":vpn"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.net.VpnService"/>
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".SetProxyReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="net.typeblog.socks.SET_PROXY"/>
+            </intent-filter>
+        </receiver>
+
     </application>
+
 </manifest>

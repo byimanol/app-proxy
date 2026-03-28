@@ -24,8 +24,10 @@ public class Socks5VpnService extends VpnService {
 
     private void startVpn() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
-        String host = prefs.getString("host", "");
-        int port = prefs.getInt("port", 1080);
+        final String host = prefs.getString("host", "");
+        final int port = prefs.getInt("port", 1080);
+        final String user = prefs.getString("user", "");
+        final String pass = prefs.getString("pass", "");
 
         try {
             vpnInterface = new Builder()
@@ -37,6 +39,54 @@ public class Socks5VpnService extends VpnService {
 
             running = true;
             prefs.edit().putBoolean("connected", true).apply();
+
+            vpnThread = new Thread(() -> {
+                FileInputStream in = new FileInputStream(vpnInterface.getFileDescriptor());
+                FileOutputStream out = new FileOutputStream(vpnInterface.getFileDescriptor());
+                byte[] buffer = new byte[32767];
+
+                while (running) {
+                    try {
+                        int length = in.read(buffer);
+                        if (length <= 0) continue;
+
+                        // Conectar al proxy SOCKS5 y reenviar
+                        Socket socket = new Socket();
+                        protect(socket);
+                        socket.connect(new InetSocketAddress(host, port), 5000);
+
+                        OutputStream socksOut = socket.getOutputStream();
+                        InputStream socksIn = socket.getInputStream();
+
+                        // Handshake SOCKS5 con autenticación
+                        socksOut.write(new byte[]{0x05, 0x02, 0x00, 0x02});
+                        socksOut.flush();
+
+                        byte[] response = new byte[2];
+                        socksIn.read(response);
+
+                        if (response[1] == 0x02) {
+                            // Autenticación usuario/contraseña
+                            byte[] uBytes = user.getBytes();
+                            byte[] pBytes = pass.getBytes();
+                            byte[] authPacket = new byte[3 + uBytes.length + pBytes.length];
+                            authPacket[0] = 0x01;
+                            authPacket[1] = (byte) uBytes.length;
+                            System.arraycopy(uBytes, 0, authPacket, 2, uBytes.length);
+                            authPacket[2 + uBytes.length] = (byte) pBytes.length;
+                            System.arraycopy(pBytes, 0, authPacket, 3 + uBytes.length, pBytes.length);
+                            socksOut.write(authPacket);
+                            socksOut.flush();
+                            socksIn.read(response);
+                        }
+
+                        socket.close();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            vpnThread.start();
 
         } catch (Exception e) {
             e.printStackTrace();
