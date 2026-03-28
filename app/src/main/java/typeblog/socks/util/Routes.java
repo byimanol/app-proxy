@@ -3,7 +3,7 @@ package net.typeblog.socks.util;
 import android.content.Context;
 import android.net.VpnService;
 
-import net.typeblog.socks.R;
+import com.socks5setter.R;
 import static net.typeblog.socks.util.Constants.*;
 
 public class Routes {

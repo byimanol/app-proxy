@@ -7,7 +7,7 @@ import android.text.TextUtils;
 import java.util.ArrayList;
 import java.util.List;
 
-import net.typeblog.socks.R;
+import com.socks5setter.R;
 import static net.typeblog.socks.util.Constants.*;
 
 public class ProfileManager {

@@ -11,7 +11,7 @@ import java.io.OutputStream;
 import java.io.FileOutputStream;
 import java.util.List;
 
-import net.typeblog.socks.R;
+import com.socks5setter.R;
 import net.typeblog.socks.SocksVpnService;
 import static net.typeblog.socks.util.Constants.*;
 
