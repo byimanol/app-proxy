@@ -13,40 +13,27 @@ public class SetProxyReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent intent) {
         Log.d(TAG, "Broadcast received: " + intent.getAction());
-        
+
         String host = intent.getStringExtra("host");
         int port = intent.getIntExtra("port", 1080);
         String user = intent.getStringExtra("user");
         String pass = intent.getStringExtra("pass");
-
-        Log.d(TAG, "Proxy config - host: " + host + ", port: " + port + ", user: " + user);
 
         if (host == null || host.isEmpty()) {
             Log.e(TAG, "Host is empty, aborting");
             return;
         }
 
-        // Always stop any existing connection first to ensure clean reconnection
-        Log.d(TAG, "Stopping any existing VPN connection");
-        Intent stopIntent = new Intent(ctx, Socks5VpnService.class);
-        stopIntent.setAction("STOP");
-        ctx.startService(stopIntent);
-        
-        // Force stop the native VPN service as well
-        try {
-            ctx.stopService(new Intent(ctx, net.typeblog.socks.SocksVpnService.class));
-        } catch (Exception e) {
-            Log.w(TAG, "Error stopping native VPN service: " + e.getMessage());
-        }
-        
-        // Wait for complete shutdown
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            Log.e(TAG, "Interrupted while waiting for VPN to stop");
-        }
+        Log.d(TAG, "New config - host: " + host + ", port: " + port);
 
-        // Save new configuration
+        // 1. Detener completamente ambos servicios
+        Intent stopSocks5 = new Intent(ctx, Socks5VpnService.class);
+        stopSocks5.setAction("STOP");
+        ctx.startService(stopSocks5);
+
+        ctx.stopService(new Intent(ctx, net.typeblog.socks.SocksVpnService.class));
+
+        // 2. Guardar nueva configuración
         SharedPreferences prefs = ctx.getSharedPreferences("proxy_config", Context.MODE_PRIVATE);
         prefs.edit()
             .putString("host", host)
@@ -56,22 +43,28 @@ public class SetProxyReceiver extends BroadcastReceiver {
             .putBoolean("connected", false)
             .apply();
 
-        Log.d(TAG, "Configuration saved to SharedPreferences");
+        Log.d(TAG, "New config saved");
 
-        // Check if VPN permission is already granted
-        Intent vpnIntent = VpnService.prepare(ctx);
-        if (vpnIntent == null) {
-            // Permission already granted, start VPN service directly
-            Log.d(TAG, "VPN permission already granted, starting service");
-            Intent serviceIntent = new Intent(ctx, Socks5VpnService.class);
-            ctx.startService(serviceIntent);
-        } else {
-            // Need to request VPN permission
-            Log.d(TAG, "VPN permission not granted, launching MainActivity");
-            Intent activityIntent = new Intent(ctx, MainActivity.class);
-            activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            activityIntent.putExtra("request_vpn", true);
-            ctx.startActivity(activityIntent);
-        }
+        // 3. Esperar que se detenga y reiniciar con nueva config
+        new Thread(() -> {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Log.e(TAG, "Interrupted");
+            }
+
+            Intent vpnIntent = VpnService.prepare(ctx);
+            if (vpnIntent == null) {
+                Log.d(TAG, "Starting VPN with new config");
+                Intent serviceIntent = new Intent(ctx, Socks5VpnService.class);
+                ctx.startService(serviceIntent);
+            } else {
+                Log.d(TAG, "VPN permission needed, launching MainActivity");
+                Intent activityIntent = new Intent(ctx, MainActivity.class);
+                activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activityIntent.putExtra("request_vpn", true);
+                ctx.startActivity(activityIntent);
+            }
+        }).start();
     }
 }
