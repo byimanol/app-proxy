@@ -5,13 +5,22 @@ import android.content.SharedPreferences;
 import android.net.VpnService;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
+import net.typeblog.socks.util.Constants;
+import net.typeblog.socks.util.Profile;
+import net.typeblog.socks.util.Utility;
 import java.io.*;
 
 public class Socks5VpnService extends VpnService {
 
     private static final String TAG = "Socks5VPN";
     private ParcelFileDescriptor vpnInterface;
-    private Process tun2socksProcess;
+    private Thread vpnThread;
+
+    static {
+        System.loadLibrary("system");
+        System.loadLibrary("tun2socks");
+        System.loadLibrary("pdnsd");
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -21,24 +30,6 @@ public class Socks5VpnService extends VpnService {
         }
         startVpn();
         return START_STICKY;
-    }
-
-    private String extractBinary() throws IOException {
-        File outFile = new File(getFilesDir(), "tun2socks");
-        if (!outFile.exists()) {
-            Log.d(TAG, "Extrayendo binario...");
-            InputStream is = getAssets().open("tun2socks");
-            FileOutputStream fos = new FileOutputStream(outFile);
-            byte[] buf = new byte[4096];
-            int len;
-            while ((len = is.read(buf)) > 0) fos.write(buf, 0, len);
-            fos.close();
-            is.close();
-        }
-        outFile.setExecutable(true);
-        Log.d(TAG, "Binary size: " + outFile.length() + " bytes");
-        Log.d(TAG, "Binary executable: " + outFile.canExecute());
-        return outFile.getAbsolutePath();
     }
 
     private void startVpn() {
@@ -55,74 +46,44 @@ public class Socks5VpnService extends VpnService {
         }
 
         try {
-            vpnInterface = new Builder()
-                .addAddress("10.0.0.2", 24)
-                .addRoute("0.0.0.0", 0)
-                .addDnsServer("8.8.8.8")
-                .addDnsServer("8.8.4.4")
-                .addDnsServer("1.1.1.1")
-                .setSession("Socks5VPN")
-                .setMtu(1500)
-                .establish();
+            Builder builder = new Builder();
+            builder.addAddress("10.0.0.2", 24);
+            builder.addRoute("0.0.0.0", 0);
+            builder.addDnsServer("8.8.8.8");
+            builder.addDnsServer("8.8.4.4");
+            builder.setSession("Socks5VPN");
+            builder.setMtu(1500);
+
+            vpnInterface = builder.establish();
 
             if (vpnInterface == null) {
-                Log.e(TAG, "VPN interface es null - permiso no concedido");
+                Log.e(TAG, "VPN interface es null");
                 stopSelf();
                 return;
             }
 
             int fd = vpnInterface.getFd();
-            Log.d(TAG, "VPN interface creada, fd: " + fd);
+            Log.d(TAG, "VPN fd: " + fd);
 
-            String tun2socksPath = extractBinary();
+            // Usar Utility de SocksDroid para iniciar tun2socks
+            Profile profile = new Profile();
+            profile.setServer(host);
+            profile.setPort(port);
+            profile.setUsername(user);
+            profile.setPassword(pass);
 
-            // Crear config file para hev-socks5-tunnel
-            String config =
-                "tunnel:\n" +
-                "  mtu: 1500\n" +
-                "  ipv4: 10.0.0.2\n" +
-                "  fd: " + fd + "\n" +
-                "socks5:\n" +
-                "  port: " + port + "\n" +
-                "  address: " + host + "\n" +
-                (user.isEmpty() ? "" :
-                "  username: " + user + "\n" +
-                "  password: " + pass + "\n") +
-                "misc:\n" +
-                "  log-level: debug\n";
-
-            Log.d(TAG, "Config:\n" + config);
-
-            File configFile = new File(getFilesDir(), "config.yml");
-            FileOutputStream cfos = new FileOutputStream(configFile);
-            cfos.write(config.getBytes());
-            cfos.close();
-
-            String[] cmd = {tun2socksPath, configFile.getAbsolutePath()};
-            Log.d(TAG, "CMD: " + tun2socksPath + " " + configFile.getAbsolutePath());
-
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.redirectErrorStream(true);
-            tun2socksProcess = pb.start();
-
-            Log.d(TAG, "tun2socks proceso iniciado");
-
-            new Thread(() -> {
-                try (BufferedReader br = new BufferedReader(
-                        new InputStreamReader(tun2socksProcess.getInputStream()))) {
-                    String line;
-                    while ((line = br.readLine()) != null) {
-                        Log.d(TAG, "[tun2socks] " + line);
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Error leyendo output", e);
-                }
-
-                int exitCode = -1;
-                try { exitCode = tun2socksProcess.waitFor(); } catch (Exception ignored) {}
-                Log.e(TAG, "tun2socks terminó con código: " + exitCode);
-                prefs.edit().putBoolean("connected", false).apply();
-            }).start();
+            Utility.startTun2Socks(
+                this,
+                fd,
+                1500,
+                "10.0.0.2",
+                "255.255.255.0",
+                "10.0.0.1",
+                host + ":" + port,
+                user.isEmpty() ? null : user,
+                pass.isEmpty() ? null : pass,
+                false
+            );
 
             prefs.edit().putBoolean("connected", true).apply();
             Log.d(TAG, "VPN iniciada → " + host + ":" + port);
@@ -134,10 +95,10 @@ public class Socks5VpnService extends VpnService {
     }
 
     private void stopVpn() {
-        if (tun2socksProcess != null) {
-            tun2socksProcess.destroy();
-            tun2socksProcess = null;
-        }
+        try {
+            Utility.stopTun2Socks();
+        } catch (Exception ignored) {}
+
         try {
             if (vpnInterface != null) vpnInterface.close();
         } catch (Exception ignored) {}
