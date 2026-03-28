@@ -26,27 +26,28 @@ public class SetProxyReceiver extends BroadcastReceiver {
             return;
         }
 
-        // Check if connection is already active
-        SharedPreferences prefs = ctx.getSharedPreferences("proxy_config", Context.MODE_PRIVATE);
-        boolean wasConnected = prefs.getBoolean("connected", false);
-        String oldHost = prefs.getString("host", "");
+        // Always stop any existing connection first to ensure clean reconnection
+        Log.d(TAG, "Stopping any existing VPN connection");
+        Intent stopIntent = new Intent(ctx, Socks5VpnService.class);
+        stopIntent.setAction("STOP");
+        ctx.startService(stopIntent);
         
-        // If there's an existing connection and it's different from the new one, stop it first
-        if (wasConnected && !oldHost.equals(host)) {
-            Log.d(TAG, "Stopping existing VPN connection to switch proxy");
-            Intent stopIntent = new Intent(ctx, Socks5VpnService.class);
-            stopIntent.setAction("STOP");
-            ctx.startService(stopIntent);
-            
-            // Wait a bit for the service to stop
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                Log.e(TAG, "Interrupted while waiting for VPN to stop");
-            }
+        // Force stop the native VPN service as well
+        try {
+            ctx.stopService(new Intent(ctx, net.typeblog.socks.SocksVpnService.class));
+        } catch (Exception e) {
+            Log.w(TAG, "Error stopping native VPN service: " + e.getMessage());
+        }
+        
+        // Wait for complete shutdown
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Log.e(TAG, "Interrupted while waiting for VPN to stop");
         }
 
         // Save new configuration
+        SharedPreferences prefs = ctx.getSharedPreferences("proxy_config", Context.MODE_PRIVATE);
         prefs.edit()
             .putString("host", host)
             .putInt("port", port)

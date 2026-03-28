@@ -38,11 +38,12 @@ public class SocksVpnService extends VpnService {
     private ParcelFileDescriptor mInterface;
     private boolean mRunning = false;
     private final IBinder mBinder = new VpnBinder();
+    private String mCurrentServer = "";
+    private int mCurrentPort = 0;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) return START_STICKY;
-        if (mRunning) return START_STICKY;
 
         final String name = intent.getStringExtra(INTENT_NAME);
         final String server = intent.getStringExtra(INTENT_SERVER);
@@ -57,6 +58,25 @@ public class SocksVpnService extends VpnService {
         final String[] appList = intent.getStringArrayExtra(INTENT_APP_LIST);
         final boolean ipv6 = intent.getBooleanExtra(INTENT_IPV6_PROXY, false);
         final String udpgw = intent.getStringExtra(INTENT_UDP_GW);
+
+        // Check if there's already a connection to a different server
+        if (mRunning && (!server.equals(mCurrentServer) || port != mCurrentPort)) {
+            Log.d(TAG, "Different server detected, stopping old connection");
+            stopMe();
+            mRunning = false;
+            mCurrentServer = "";
+            mCurrentPort = 0;
+        }
+
+        // If already running with the same configuration, don't reconnect
+        if (mRunning) {
+            Log.d(TAG, "Already connected to " + server + ":" + port);
+            return START_STICKY;
+        }
+
+        // Store current server and port
+        mCurrentServer = server;
+        mCurrentPort = port;
 
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= 26) {
@@ -132,6 +152,9 @@ public class SocksVpnService extends VpnService {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        mRunning = false;
+        mCurrentServer = "";
+        mCurrentPort = 0;
         stopSelf();
     }
 

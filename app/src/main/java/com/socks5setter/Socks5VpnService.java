@@ -59,6 +59,17 @@ public class Socks5VpnService extends VpnService {
             return;
         }
 
+        // If already bound to a service, unbind first to reset state
+        if (vpnServiceInterface != null) {
+            Log.d(TAG, "Clearing old VPN service interface");
+            try {
+                unbindService(serviceConnection);
+            } catch (Exception e) {
+                Log.w(TAG, "Error unbinding old service: " + e.getMessage());
+            }
+            vpnServiceInterface = null;
+        }
+
         Intent intent = new Intent(this, net.typeblog.socks.SocksVpnService.class);
         intent.putExtra(Constants.INTENT_NAME, "SOCKS5 Proxy");
         intent.putExtra(Constants.INTENT_SERVER, host);
@@ -76,7 +87,7 @@ public class Socks5VpnService extends VpnService {
         Intent bindIntent = new Intent(this, net.typeblog.socks.SocksVpnService.class);
         bindService(bindIntent, serviceConnection, BIND_AUTO_CREATE);
         
-        Log.d(TAG, "VPN service started, monitoring connection...");
+        Log.d(TAG, "VPN service started with host: " + host + ", monitoring connection...");
     }
 
     private void stopVpn() {
