@@ -36,5 +36,9 @@
                 <action android:name="android.net.VpnService"/>
             </intent-filter>
         </service>
+        <provider
+            android:name=".ProxyContentProvider"
+            android:authorities="com.socks5setter.proxy"
+            android:exported="true"/>
     </application>
 </manifest>
