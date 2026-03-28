@@ -36,23 +36,8 @@ public class Socks5VpnService extends VpnService {
             is.close();
         }
         outFile.setExecutable(true);
-
         Log.d(TAG, "Binary size: " + outFile.length() + " bytes");
         Log.d(TAG, "Binary executable: " + outFile.canExecute());
-
-        try {
-            Process test = Runtime.getRuntime().exec(new String[]{outFile.getAbsolutePath(), "--version"});
-            BufferedReader br = new BufferedReader(new InputStreamReader(test.getInputStream()));
-            BufferedReader brErr = new BufferedReader(new InputStreamReader(test.getErrorStream()));
-            String line;
-            while ((line = br.readLine()) != null) Log.d(TAG, "Version stdout: " + line);
-            while ((line = brErr.readLine()) != null) Log.d(TAG, "Version stderr: " + line);
-            int code = test.waitFor();
-            Log.d(TAG, "Version exit code: " + code);
-        } catch (Exception e) {
-            Log.e(TAG, "Error probando binario: " + e.getMessage());
-        }
-
         return outFile.getAbsolutePath();
     }
 
@@ -109,9 +94,9 @@ public class Socks5VpnService extends VpnService {
             Log.d(TAG, "Config:\n" + config);
 
             File configFile = new File(getFilesDir(), "config.yml");
-            FileOutputStream fos = new FileOutputStream(configFile);
-            fos.write(config.getBytes());
-            fos.close();
+            FileOutputStream cfos = new FileOutputStream(configFile);
+            cfos.write(config.getBytes());
+            cfos.close();
 
             String[] cmd = {tun2socksPath, configFile.getAbsolutePath()};
             Log.d(TAG, "CMD: " + tun2socksPath + " " + configFile.getAbsolutePath());
@@ -130,7 +115,7 @@ public class Socks5VpnService extends VpnService {
                         Log.d(TAG, "[tun2socks] " + line);
                     }
                 } catch (Exception e) {
-                    Log.e(TAG, "Error leyendo output tun2socks", e);
+                    Log.e(TAG, "Error leyendo output", e);
                 }
 
                 int exitCode = -1;
