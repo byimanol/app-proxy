@@ -9,9 +9,11 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public class MainActivity extends Activity {
     private static final int VPN_REQUEST = 1;
+    private static final int CONFIG_REQUEST = 2;
     private Handler handler = new Handler();
     private Runnable refreshRunnable;
     private Switch vpnSwitch;
@@ -43,6 +45,11 @@ public class MainActivity extends Activity {
             if (vpnSwitch != null) {
                 vpnSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
                     if (isChecked) {
+                        if (!isProxyConfigured()) {
+                            Toast.makeText(MainActivity.this, "Configura el proxy primero", Toast.LENGTH_SHORT).show();
+                            vpnSwitch.setChecked(false);
+                            return;
+                        }
                         requestVpnPermission();
                     } else {
                         stopVpn();
@@ -51,6 +58,16 @@ public class MainActivity extends Activity {
             }
         }
         return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.prof_add) {
+            Intent intent = new Intent(this, ConfigActivity.class);
+            startActivityForResult(intent, CONFIG_REQUEST);
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     @Override
@@ -63,6 +80,12 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(refreshRunnable);
+    }
+
+    private boolean isProxyConfigured() {
+        SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
+        String host = prefs.getString("host", "");
+        return !host.isEmpty();
     }
 
     private void requestVpnPermission() {
@@ -84,6 +107,10 @@ public class MainActivity extends Activity {
             if (vpnSwitch != null) {
                 vpnSwitch.setChecked(false);
             }
+            Toast.makeText(this, "Permiso de VPN denegado", Toast.LENGTH_SHORT).show();
+        } else if (requestCode == CONFIG_REQUEST) {
+            // Configuration updated, refresh UI
+            updateUI();
         }
     }
 
@@ -110,7 +137,7 @@ public class MainActivity extends Activity {
 
         status.setText(connected ? "● Conectado" : "○ Desconectado");
         status.setTextColor(connected ? 0xFF4CAF50 : 0xFFF44336);
-        info.setText("Servidor: " + host + "\nPuerto: " + port + "\nUsuario: " + user);
+        info.setText("Servidor: " + host + "\nPuerto: " + port + "\nUsuario: " + (user.isEmpty() ? "Sin autenticación" : user));
         
         // Update switch state to match connection status
         if (vpnSwitch != null && vpnSwitch.isChecked() != connected) {

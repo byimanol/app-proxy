@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="20dp"
+    android:background="#121212">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:text="Configurar Proxy SOCKS5"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:layout_marginBottom="24dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp">
+            <TextView
+                android:text="Servidor"
+                android:textSize="14sp"
+                android:textColor="#BBBBBB"
+                android:layout_marginBottom="8dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+            <EditText
+                android:id="@+id/edit_server"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:inputType="textNoSuggestions"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:hint="ej: proxy.example.com"
+                android:background="#1E1E1E"
+                android:paddingHorizontal="12dp"
+                android:textSize="14sp"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp">
+            <TextView
+                android:text="Puerto"
+                android:textSize="14sp"
+                android:textColor="#BBBBBB"
+                android:layout_marginBottom="8dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+            <EditText
+                android:id="@+id/edit_port"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:inputType="number"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:hint="1080"
+                android:background="#1E1E1E"
+                android:paddingHorizontal="12dp"
+                android:textSize="14sp"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp">
+            <TextView
+                android:text="Usuario (opcional)"
+                android:textSize="14sp"
+                android:textColor="#BBBBBB"
+                android:layout_marginBottom="8dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+            <EditText
+                android:id="@+id/edit_user"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:inputType="textNoSuggestions"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:hint="usuario"
+                android:background="#1E1E1E"
+                android:paddingHorizontal="12dp"
+                android:textSize="14sp"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="24dp">
+            <TextView
+                android:text="Contraseña (opcional)"
+                android:textSize="14sp"
+                android:textColor="#BBBBBB"
+                android:layout_marginBottom="8dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+            <EditText
+                android:id="@+id/edit_password"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:inputType="textPassword"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#666666"
+                android:hint="contraseña"
+                android:background="#1E1E1E"
+                android:paddingHorizontal="12dp"
+                android:textSize="14sp"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end">
+            <Button
+                android:id="@+id/btn_cancel"
+                android:text="Cancelar"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:background="#333333"
+                android:layout_width="120dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="12dp"/>
+
+            <Button
+                android:id="@+id/btn_save"
+                android:text="Guardar"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:background="#2196F3"
+                android:layout_width="120dp"
+                android:layout_height="48dp"/>
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

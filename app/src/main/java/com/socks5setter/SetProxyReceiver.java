@@ -5,29 +5,48 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.VpnService;
+import android.util.Log;
 
 public class SetProxyReceiver extends BroadcastReceiver {
+    private static final String TAG = "SetProxyReceiver";
+
     @Override
     public void onReceive(Context ctx, Intent intent) {
+        Log.d(TAG, "Broadcast received: " + intent.getAction());
+        
         String host = intent.getStringExtra("host");
         int port = intent.getIntExtra("port", 1080);
         String user = intent.getStringExtra("user");
         String pass = intent.getStringExtra("pass");
 
+        Log.d(TAG, "Proxy config - host: " + host + ", port: " + port + ", user: " + user);
+
+        if (host == null || host.isEmpty()) {
+            Log.e(TAG, "Host is empty, aborting");
+            return;
+        }
+
         SharedPreferences prefs = ctx.getSharedPreferences("proxy_config", Context.MODE_PRIVATE);
         prefs.edit()
             .putString("host", host)
             .putInt("port", port)
-            .putString("user", user)
-            .putString("pass", pass)
+            .putString("user", user == null ? "" : user)
+            .putString("pass", pass == null ? "" : pass)
             .putBoolean("connected", false)
             .apply();
 
+        Log.d(TAG, "Configuration saved to SharedPreferences");
+
+        // Check if VPN permission is already granted
         Intent vpnIntent = VpnService.prepare(ctx);
         if (vpnIntent == null) {
+            // Permission already granted, start VPN service directly
+            Log.d(TAG, "VPN permission already granted, starting service");
             Intent serviceIntent = new Intent(ctx, Socks5VpnService.class);
             ctx.startService(serviceIntent);
         } else {
+            // Need to request VPN permission
+            Log.d(TAG, "VPN permission not granted, launching MainActivity");
             Intent activityIntent = new Intent(ctx, MainActivity.class);
             activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activityIntent.putExtra("request_vpn", true);
