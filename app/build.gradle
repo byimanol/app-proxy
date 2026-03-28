@@ -1,6 +1,7 @@
 apply plugin: 'com.android.application'
 android {
     compileSdkVersion 33
+    namespace "com.socks5setter"
     defaultConfig {
         applicationId "com.socks5setter"
         minSdkVersion 21
