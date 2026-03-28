@@ -5,11 +5,3 @@ buildscript {
 allprojects {
     repositories { google(); mavenCentral() }
 }
-android {
-    ...
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ['src/main/jniLibs']
-        }
-    }
-}
