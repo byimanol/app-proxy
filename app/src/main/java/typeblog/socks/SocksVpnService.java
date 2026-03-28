@@ -89,9 +89,19 @@ public class SocksVpnService extends VpnService {
 
         configure(name, route, perApp, appBypass, appList, ipv6);
 
-        if (mInterface != null)
-            start(mInterface.getFd(), server, port, username, passwd, dns, dnsPort, ipv6, udpgw);
+        if (mInterface == null) {
+            Log.e(TAG, "Failed to establish VPN interface");
+            stopMe();
+            return START_NOT_STICKY;
+        }
 
+        if (!start(mInterface.getFd(), server, port, username, passwd, dns, dnsPort, ipv6, udpgw)) {
+            Log.e(TAG, "Failed to start VPN tunnel");
+            stopMe();
+            return START_NOT_STICKY;
+        }
+
+        Log.d(TAG, "VPN Connection established successfully");
         return START_STICKY;
     }
 
@@ -175,11 +185,14 @@ public class SocksVpnService extends VpnService {
         mInterface = b.establish();
     }
 
-    private void start(int fd, String server, int port, String user, String passwd, String dns, int dnsPort, boolean ipv6, String udpgw) {
+    private boolean start(int fd, String server, int port, String user, String passwd, String dns, int dnsPort, boolean ipv6, String udpgw) {
         Utility.makePdnsdConf(this, dns, dnsPort);
 
-        Utility.exec(String.format(Locale.US, "%s/libpdnsd.so -c %s/pdnsd.conf",
-                getApplicationInfo().nativeLibraryDir, getFilesDir()));
+        if (Utility.exec(String.format(Locale.US, "%s/libpdnsd.so -c %s/pdnsd.conf",
+                getApplicationInfo().nativeLibraryDir, getFilesDir())) != 0) {
+            Log.e(TAG, "Failed to start pdnsd");
+            return false;
+        }
 
         String command = String.format(Locale.US,
                 "%s/libtun2socks.so --netif-ipaddr 26.26.26.2"
@@ -209,15 +222,16 @@ public class SocksVpnService extends VpnService {
         }
 
         if (Utility.exec(command) != 0) {
-            stopMe();
-            return;
+            Log.e(TAG, "Failed to execute tun2socks");
+            return false;
         }
 
         int i = 0;
         while (i < 5) {
             if (System.sendfd(fd, getApplicationInfo().dataDir + "/sock_path") != -1) {
                 mRunning = true;
-                return;
+                Log.d(TAG, "Successfully sent file descriptor to native process");
+                return true;
             }
             i++;
             try {
@@ -226,6 +240,8 @@ public class SocksVpnService extends VpnService {
                 e.printStackTrace();
             }
         }
-        stopMe();
+        
+        Log.e(TAG, "Failed to send file descriptor to native process after 5 attempts");
+        return false;
     }
 }

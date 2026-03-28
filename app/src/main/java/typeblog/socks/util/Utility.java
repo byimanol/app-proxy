@@ -20,10 +20,26 @@ public class Utility {
 
     public static int exec(String cmd) {
         try {
+            Log.d(TAG, "Executing: " + cmd);
             Process p = Runtime.getRuntime().exec(cmd);
-
-            return p.waitFor();
+            int result = p.waitFor();
+            
+            if (result != 0) {
+                Log.e(TAG, "Command failed with exit code: " + result);
+                try (InputStream err = p.getErrorStream()) {
+                    byte[] buf = new byte[1024];
+                    int len;
+                    while ((len = err.read(buf)) > 0) {
+                        Log.e(TAG, "Error: " + new String(buf, 0, len));
+                    }
+                }
+            } else {
+                Log.d(TAG, "Command executed successfully");
+            }
+            
+            return result;
         } catch (Exception e) {
+            Log.e(TAG, "Exception executing command: " + e.getMessage(), e);
             return -1;
         }
     }
