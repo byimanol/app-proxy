@@ -8,8 +8,9 @@
     android:background="#121212">
 
     <TextView
-        android:text="SOCKS5 Proxy"
-        android:textSize="24sp"
+        android:id="@+id/title"
+        android:text="..."
+        android:textSize="32sp"
         android:textColor="#FFFFFF"
         android:textStyle="bold"
         android:layout_marginBottom="32dp"
@@ -27,7 +28,7 @@
 
     <TextView
         android:id="@+id/info"
-        android:text="Servidor: No configurado\nPuerto: 0\nUsuario: "
+        android:text="Envía configuración por ADB"
         android:textSize="14sp"
         android:textColor="#BBBBBB"
         android:lineSpacingExtra="8dp"

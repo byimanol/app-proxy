@@ -103,13 +103,9 @@ public class MainActivity extends Activity {
         if (requestCode == VPN_REQUEST && resultCode == RESULT_OK) {
             startVpnService();
         } else if (requestCode == VPN_REQUEST) {
-            // Permission denied, uncheck the switch
-            if (vpnSwitch != null) {
-                vpnSwitch.setChecked(false);
-            }
+            if (vpnSwitch != null) vpnSwitch.setChecked(false);
             Toast.makeText(this, "Permiso de VPN denegado", Toast.LENGTH_SHORT).show();
         } else if (requestCode == CONFIG_REQUEST) {
-            // Configuration updated, refresh UI
             updateUI();
         }
     }
@@ -125,6 +121,25 @@ public class MainActivity extends Activity {
         startService(intent);
     }
 
+    private String getLocalIp() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                java.net.NetworkInterface iface = interfaces.nextElement();
+                java.util.Enumeration<java.net.InetAddress> addresses = iface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    java.net.InetAddress addr = addresses.nextElement();
+                    if (!addr.isLoopbackAddress() && addr instanceof java.net.Inet4Address) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "IP desconocida";
+    }
+
     private void updateUI() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
         String host = prefs.getString("host", "No configurado");
@@ -132,14 +147,15 @@ public class MainActivity extends Activity {
         String user = prefs.getString("user", "");
         boolean connected = prefs.getBoolean("connected", false);
 
+        TextView title = findViewById(R.id.title);
         TextView status = findViewById(R.id.status);
         TextView info = findViewById(R.id.info);
 
+        title.setText(getLocalIp());
         status.setText(connected ? "● Conectado" : "○ Desconectado");
         status.setTextColor(connected ? 0xFF4CAF50 : 0xFFF44336);
         info.setText("Servidor: " + host + "\nPuerto: " + port + "\nUsuario: " + (user.isEmpty() ? "Sin autenticación" : user));
-        
-        // Update switch state to match connection status
+
         if (vpnSwitch != null && vpnSwitch.isChecked() != connected) {
             vpnSwitch.setChecked(connected);
         }
