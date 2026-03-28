@@ -25,10 +25,8 @@ public class Socks5VpnService extends VpnService {
 
     private String extractBinary() throws IOException {
         File outFile = new File(getFilesDir(), "tun2socks");
-        Log.d(TAG, "Binary path: " + outFile.getAbsolutePath());
-        Log.d(TAG, "Binary exists: " + outFile.exists());
         if (!outFile.exists()) {
-            Log.d(TAG, "Extracting binary from assets...");
+            Log.d(TAG, "Extrayendo binario...");
             InputStream is = getAssets().open("tun2socks");
             FileOutputStream fos = new FileOutputStream(outFile);
             byte[] buf = new byte[4096];
@@ -36,9 +34,25 @@ public class Socks5VpnService extends VpnService {
             while ((len = is.read(buf)) > 0) fos.write(buf, 0, len);
             fos.close();
             is.close();
-            outFile.setExecutable(true);
-            Log.d(TAG, "Binary extracted OK");
         }
+        outFile.setExecutable(true);
+
+        Log.d(TAG, "Binary size: " + outFile.length() + " bytes");
+        Log.d(TAG, "Binary executable: " + outFile.canExecute());
+
+        try {
+            Process test = Runtime.getRuntime().exec(new String[]{outFile.getAbsolutePath(), "--version"});
+            BufferedReader br = new BufferedReader(new InputStreamReader(test.getInputStream()));
+            BufferedReader brErr = new BufferedReader(new InputStreamReader(test.getErrorStream()));
+            String line;
+            while ((line = br.readLine()) != null) Log.d(TAG, "Version stdout: " + line);
+            while ((line = brErr.readLine()) != null) Log.d(TAG, "Version stderr: " + line);
+            int code = test.waitFor();
+            Log.d(TAG, "Version exit code: " + code);
+        } catch (Exception e) {
+            Log.e(TAG, "Error probando binario: " + e.getMessage());
+        }
+
         return outFile.getAbsolutePath();
     }
 
@@ -56,7 +70,6 @@ public class Socks5VpnService extends VpnService {
         }
 
         try {
-            // 1. Crear interfaz TUN
             vpnInterface = new Builder()
                 .addAddress("10.0.0.2", 24)
                 .addRoute("0.0.0.0", 0)
@@ -76,35 +89,39 @@ public class Socks5VpnService extends VpnService {
             int fd = vpnInterface.getFd();
             Log.d(TAG, "VPN interface creada, fd: " + fd);
 
-            // 2. Extraer binario
             String tun2socksPath = extractBinary();
 
-            // 3. Armar proxy URL
-            String proxyUrl;
-            if (user != null && !user.isEmpty()) {
-                proxyUrl = "socks5://" + user + ":" + pass + "@" + host + ":" + port;
-            } else {
-                proxyUrl = "socks5://" + host + ":" + port;
-            }
+            // Crear config file para hev-socks5-tunnel
+            String config =
+                "tunnel:\n" +
+                "  mtu: 1500\n" +
+                "  ipv4: 10.0.0.2\n" +
+                "  fd: " + fd + "\n" +
+                "socks5:\n" +
+                "  port: " + port + "\n" +
+                "  address: " + host + "\n" +
+                (user.isEmpty() ? "" :
+                "  username: " + user + "\n" +
+                "  password: " + pass + "\n") +
+                "misc:\n" +
+                "  log-level: debug\n";
 
-            // 4. Armar comando
-            String[] cmd = {
-                tun2socksPath,
-                "--device", "fd://" + fd,
-                "--proxy", proxyUrl,
-                "--loglevel", "debug"
-            };
+            Log.d(TAG, "Config:\n" + config);
 
-            Log.d(TAG, "CMD: " + android.text.TextUtils.join(" ", cmd));
+            File configFile = new File(getFilesDir(), "config.yml");
+            FileOutputStream fos = new FileOutputStream(configFile);
+            fos.write(config.getBytes());
+            fos.close();
 
-            // 5. Lanzar proceso
+            String[] cmd = {tun2socksPath, configFile.getAbsolutePath()};
+            Log.d(TAG, "CMD: " + tun2socksPath + " " + configFile.getAbsolutePath());
+
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
             tun2socksProcess = pb.start();
 
             Log.d(TAG, "tun2socks proceso iniciado");
 
-            // 6. Leer output del proceso en hilo separado
             new Thread(() -> {
                 try (BufferedReader br = new BufferedReader(
                         new InputStreamReader(tun2socksProcess.getInputStream()))) {
@@ -116,7 +133,6 @@ public class Socks5VpnService extends VpnService {
                     Log.e(TAG, "Error leyendo output tun2socks", e);
                 }
 
-                // Cuando el proceso muere
                 int exitCode = -1;
                 try { exitCode = tun2socksProcess.waitFor(); } catch (Exception ignored) {}
                 Log.e(TAG, "tun2socks terminó con código: " + exitCode);
@@ -124,7 +140,7 @@ public class Socks5VpnService extends VpnService {
             }).start();
 
             prefs.edit().putBoolean("connected", true).apply();
-            Log.d(TAG, "VPN iniciada → " + proxyUrl);
+            Log.d(TAG, "VPN iniciada → " + host + ":" + port);
 
         } catch (Exception e) {
             Log.e(TAG, "Error iniciando VPN", e);
