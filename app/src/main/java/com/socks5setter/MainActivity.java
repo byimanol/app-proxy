@@ -153,29 +153,47 @@ public class MainActivity extends Activity {
 
         new Thread(() -> {
             try {
-                // Esperar 8 segundos para que el proxy esté completamente activo
-                Thread.sleep(8000);
+                int attempts = 0;
 
-                URL url = new URL("https://ipinfo.io/json");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(8000);
+                while (attempts < 10) {
+                    Thread.sleep(3000);
+                    attempts++;
 
-                BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) sb.append(line);
-                br.close();
+                    try {
+                        URL url = new URL("https://ipinfo.io/json");
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(5000);
+                        conn.setReadTimeout(5000);
 
-                String json = sb.toString();
-                cachedPublicIp = extractJson(json, "ip");
-                cachedCountry = extractJson(json, "country");
+                        BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) sb.append(line);
+                        br.close();
 
-                // Guardar en SharedPreferences para persistir entre reinicios de la app
-                getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
-                    .putString("public_ip", cachedPublicIp)
-                    .putString("public_country", cachedCountry)
-                    .apply();
+                        String json = sb.toString();
+                        String ip = extractJson(json, "ip");
+                        String country = extractJson(json, "country");
+
+                        // Si la IP es diferente a la local, el proxy está activo
+                        if (!ip.isEmpty() && !ip.equals(getLocalIp())) {
+                            cachedPublicIp = ip;
+                            cachedCountry = country;
+
+                            getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
+                                .putString("public_ip", cachedPublicIp)
+                                .putString("public_country", cachedCountry)
+                                .apply();
+                            break;
+                        }
+
+                    } catch (Exception ignored) {}
+                }
+
+                if (cachedPublicIp.isEmpty()) {
+                    cachedPublicIp = "Error";
+                    cachedCountry = "";
+                }
 
             } catch (Exception e) {
                 cachedPublicIp = "Error";
