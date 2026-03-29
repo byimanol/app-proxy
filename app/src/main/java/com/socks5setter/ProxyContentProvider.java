@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
+import android.os.Build;
 
 public class ProxyContentProvider extends ContentProvider {
 
@@ -25,8 +26,15 @@ public class ProxyContentProvider extends ContentProvider {
         boolean connected = prefs.getBoolean("connected", false);
         String connectionString = String.format("%s:%s@%s:%d", user, pass, host, port);
 
-        MatrixCursor cursor = new MatrixCursor(new String[]{"proxy", "connected", "alias"});
-        cursor.addRow(new Object[]{connectionString, connected ? "true" : "false", alias});
+        String deviceId;
+        try {
+            deviceId = Build.getSerial();
+        } catch (SecurityException e) {
+            deviceId = Build.SERIAL; // fallback para Android < 8
+        }
+
+        MatrixCursor cursor = new MatrixCursor(new String[]{"proxy", "connected", "alias", "device_id"});
+        cursor.addRow(new Object[]{connectionString, connected ? "true" : "false", alias, deviceId});
         return cursor;
     }
 
