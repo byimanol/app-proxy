@@ -166,10 +166,7 @@ public class MainActivity extends Activity {
 
                 String json = sb.toString();
                 cachedPublicIp = extractJson(json, "ip");
-                String country = extractJson(json, "country");
-                String city = extractJson(json, "city");
-                String org = extractJson(json, "org");
-                cachedCountry = country + " / " + city + " / " + org;
+                cachedCountry = extractJson(json, "country");
 
             } catch (Exception e) {
                 cachedPublicIp = "Error";
@@ -181,10 +178,15 @@ public class MainActivity extends Activity {
 
     private String extractJson(String json, String key) {
         try {
-            String search = "\"" + key + "\":\"";
-            int start = json.indexOf(search) + search.length();
+            String search = "\"" + key + "\": \"";
+            int start = json.indexOf(search);
+            if (start == -1) {
+                search = "\"" + key + "\":\"";
+                start = json.indexOf(search);
+            }
+            start += search.length();
             int end = json.indexOf("\"", start);
-            return json.substring(start, end);
+            return json.substring(start, end).trim();
         } catch (Exception e) {
             return "";
         }
@@ -204,7 +206,6 @@ public class MainActivity extends Activity {
         TextView info = findViewById(R.id.info);
         TextView publicIpView = findViewById(R.id.public_ip);
 
-        // Título: alias o IP local
         title.setText(alias.isEmpty() ? getLocalIp() : alias);
 
         status.setText(connected ? "● Conectado" : "○ Desconectado");
@@ -218,7 +219,7 @@ public class MainActivity extends Activity {
             "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña" : pass)
         );
 
-        // Solo consultar IP pública cuando cambia a conectado
+        // Solo consultar cuando cambia a conectado
         if (connected && !lastConnectedState) {
             cachedPublicIp = "";
             cachedCountry = "";
@@ -234,7 +235,7 @@ public class MainActivity extends Activity {
         lastConnectedState = connected;
 
         if (connected && !cachedPublicIp.isEmpty() && !cachedPublicIp.equals("Error")) {
-            publicIpView.setText("IP Pública: " + cachedPublicIp + "\nPaís/Ciudad: " + cachedCountry);
+            publicIpView.setText("IP Pública: " + cachedPublicIp + "  |  País: " + cachedCountry);
         } else if (connected) {
             publicIpView.setText("IP Pública: consultando...");
         } else {
