@@ -59,7 +59,6 @@ public class SocksVpnService extends VpnService {
         final boolean ipv6 = intent.getBooleanExtra(INTENT_IPV6_PROXY, false);
         final String udpgw = intent.getStringExtra(INTENT_UDP_GW);
 
-        // Check if there's already a connection to a different server
         if (mRunning && (!server.equals(mCurrentServer) || port != mCurrentPort)) {
             Log.d(TAG, "Different server detected, stopping old connection");
             stopMe();
@@ -68,13 +67,11 @@ public class SocksVpnService extends VpnService {
             mCurrentPort = 0;
         }
 
-        // If already running with the same configuration, don't reconnect
         if (mRunning) {
             Log.d(TAG, "Already connected to " + server + ":" + port);
             return START_STICKY;
         }
 
-        // Store current server and port
         mCurrentServer = server;
         mCurrentPort = port;
 
@@ -173,19 +170,11 @@ public class SocksVpnService extends VpnService {
         Routes.addRoutes(this, b, route);
         b.addRoute("8.8.8.8", 32);
 
-        if (!perApp) {
-            try {
-                b.addDisallowedApplication("com.socks5setter");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        } else {
+        // No excluimos com.socks5setter para que la app pase por el proxy
+        // y pueda consultar la IP pública correctamente
+
+        if (perApp) {
             if (bypass) {
-                try {
-                    b.addDisallowedApplication("com.socks5setter");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
                 for (String p : apps) {
                     if (TextUtils.isEmpty(p)) continue;
                     try {
@@ -196,7 +185,7 @@ public class SocksVpnService extends VpnService {
                 }
             } else {
                 for (String p : apps) {
-                    if (TextUtils.isEmpty(p) || p.trim().equals("com.socks5setter")) continue;
+                    if (TextUtils.isEmpty(p)) continue;
                     try {
                         b.addAllowedApplication(p.trim());
                     } catch (Exception e) {
@@ -205,6 +194,7 @@ public class SocksVpnService extends VpnService {
                 }
             }
         }
+
         mInterface = b.establish();
     }
 
@@ -263,7 +253,7 @@ public class SocksVpnService extends VpnService {
                 e.printStackTrace();
             }
         }
-        
+
         Log.e(TAG, "Failed to send file descriptor to native process after 5 attempts");
         return false;
     }
