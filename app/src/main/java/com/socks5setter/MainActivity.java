@@ -10,10 +10,6 @@ import android.view.MenuItem;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 public class MainActivity extends Activity {
     private static final int VPN_REQUEST = 1;
@@ -21,10 +17,24 @@ public class MainActivity extends Activity {
     private Handler handler = new Handler();
     private Runnable refreshRunnable;
     private Switch vpnSwitch;
-    private String cachedPublicIp = "";
-    private String cachedCountry = "";
-    private boolean fetchingPublicIp = false;
     private boolean lastConnectedState = false;
+
+    // Receiver que escucha cuando el Service obtiene la IP pública
+    private BroadcastReceiver publicIpReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String ip      = intent.getStringExtra("ip");
+            String country = intent.getStringExtra("country");
+            if (ip == null) ip = "No disponible";
+            if (country == null) country = "";
+
+            // Guardar en prefs para que updateUI() lo muestre
+            getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
+                .putString("public_ip", ip)
+                .putString("public_country", country)
+                .apply();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,6 +52,22 @@ public class MainActivity extends Activity {
                 handler.postDelayed(this, 1000);
             }
         };
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Registrar receiver para recibir la IP pública desde el Service
+        registerReceiver(publicIpReceiver,
+            new IntentFilter("com.socks5setter.PUBLIC_IP_RESULT"));
+        handler.post(refreshRunnable);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(refreshRunnable);
+        try { unregisterReceiver(publicIpReceiver); } catch (Exception ignored) {}
     }
 
     @Override
@@ -79,15 +105,16 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
-        handler.post(refreshRunnable);
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        handler.removeCallbacks(refreshRunnable);
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == VPN_REQUEST && resultCode == RESULT_OK) {
+            startVpnService();
+        } else if (requestCode == VPN_REQUEST) {
+            if (vpnSwitch != null) vpnSwitch.setChecked(false);
+            Toast.makeText(this, "Permiso de VPN denegado", Toast.LENGTH_SHORT).show();
+        } else if (requestCode == CONFIG_REQUEST) {
+            updateUI();
+        }
     }
 
     private boolean isProxyConfigured() {
@@ -105,19 +132,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == VPN_REQUEST && resultCode == RESULT_OK) {
-            startVpnService();
-        } else if (requestCode == VPN_REQUEST) {
-            if (vpnSwitch != null) vpnSwitch.setChecked(false);
-            Toast.makeText(this, "Permiso de VPN denegado", Toast.LENGTH_SHORT).show();
-        } else if (requestCode == CONFIG_REQUEST) {
-            updateUI();
-        }
-    }
-
     private void startVpnService() {
         startService(new Intent(this, Socks5VpnService.class));
     }
@@ -130,7 +144,8 @@ public class MainActivity extends Activity {
 
     private String getLocalIp() {
         try {
-            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            java.util.Enumeration<java.net.NetworkInterface> interfaces =
+                java.net.NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 java.net.NetworkInterface iface = interfaces.nextElement();
                 java.util.Enumeration<java.net.InetAddress> addresses = iface.getInetAddresses();
@@ -147,121 +162,44 @@ public class MainActivity extends Activity {
         return "IP desconocida";
     }
 
-    private void fetchPublicIpInfo() {
-        if (fetchingPublicIp) return;
-        fetchingPublicIp = true;
-
-        new Thread(() -> {
-            try {
-                int attempts = 0;
-
-                while (attempts < 10) {
-                    Thread.sleep(3000);
-                    attempts++;
-
-                    try {
-                        // Usar curl que sí pasa por el túnel VPN
-                        Process process = Runtime.getRuntime().exec(
-                            new String[]{"curl", "-s", "--max-time", "5", "https://ipinfo.io/json"}
-                        );
-
-                        BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                        StringBuilder sb = new StringBuilder();
-                        String line;
-                        while ((line = br.readLine()) != null) sb.append(line);
-                        br.close();
-                        process.waitFor();
-
-                        String json = sb.toString();
-                        String ip = extractJson(json, "ip");
-                        String country = extractJson(json, "country");
-
-                        if (!ip.isEmpty() && !ip.equals(getLocalIp())) {
-                            cachedPublicIp = ip;
-                            cachedCountry = country;
-
-                            getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
-                                .putString("public_ip", cachedPublicIp)
-                                .putString("public_country", cachedCountry)
-                                .apply();
-                            break;
-                        }
-
-                    } catch (Exception ignored) {}
-                }
-
-                if (cachedPublicIp.isEmpty()) {
-                    cachedPublicIp = "No disponible";
-                    cachedCountry = "";
-                }
-
-            } catch (Exception e) {
-                cachedPublicIp = "Error";
-                cachedCountry = "";
-            }
-            fetchingPublicIp = false;
-        }).start();
-    }
-
-    private String extractJson(String json, String key) {
-        try {
-            String search = "\"" + key + "\": \"";
-            int start = json.indexOf(search);
-            if (start == -1) {
-                search = "\"" + key + "\":\"";
-                start = json.indexOf(search);
-            }
-            start += search.length();
-            int end = json.indexOf("\"", start);
-            return json.substring(start, end).trim();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
     private void updateUI() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
-        String host = prefs.getString("host", "No configurado");
-        int port = prefs.getInt("port", 0);
-        String user = prefs.getString("user", "");
-        String pass = prefs.getString("pass", "");
-        String alias = prefs.getString("alias", "");
+        String host     = prefs.getString("host", "No configurado");
+        int    port     = prefs.getInt("port", 0);
+        String user     = prefs.getString("user", "");
+        String pass     = prefs.getString("pass", "");
+        String alias    = prefs.getString("alias", "");
         boolean connected = prefs.getBoolean("connected", false);
 
-        TextView title = findViewById(R.id.title);
-        TextView status = findViewById(R.id.status);
-        TextView info = findViewById(R.id.info);
+        TextView title       = findViewById(R.id.title);
+        TextView status      = findViewById(R.id.status);
+        TextView info        = findViewById(R.id.info);
         TextView publicIpView = findViewById(R.id.public_ip);
 
         title.setText(alias.isEmpty() ? getLocalIp() : alias);
-
         status.setText(connected ? "● Conectado" : "○ Desconectado");
         status.setTextColor(connected ? 0xFF4CAF50 : 0xFFF44336);
 
         info.setText(
-            "IPv4: " + getLocalIp() +
+            "IPv4: "     + getLocalIp() +
             "\nServidor: " + host +
-            "\nPuerto: " + port +
-            "\nUsuario: " + (user.isEmpty() ? "Sin autenticación" : user) +
+            "\nPuerto: "   + port +
+            "\nUsuario: "  + (user.isEmpty() ? "Sin autenticación" : user) +
             "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña" : pass)
         );
 
-        // Solo consultar cuando cambia de desconectado a conectado
+        // Cuando cambia de desconectado → conectado, limpiar IP vieja
         if (connected && !lastConnectedState) {
-            getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
+            prefs.edit()
                 .remove("public_ip")
                 .remove("public_country")
                 .apply();
-            cachedPublicIp = "";
-            cachedCountry = "";
-            fetchPublicIpInfo();
+            // El Service se encargará de fetchear y mandarnos el broadcast
         }
 
-        // Resetear cuando se desconecta
+        // Cuando se desconecta, limpiar IP
         if (!connected && lastConnectedState) {
-            cachedPublicIp = "";
-            cachedCountry = "";
-            getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
+            prefs.edit()
                 .remove("public_ip")
                 .remove("public_country")
                 .apply();
@@ -269,16 +207,13 @@ public class MainActivity extends Activity {
 
         lastConnectedState = connected;
 
-        // Cargar desde SharedPreferences si existe y no está en memoria
-        if (cachedPublicIp.isEmpty()) {
-            cachedPublicIp = prefs.getString("public_ip", "");
-            cachedCountry = prefs.getString("public_country", "");
-        }
+        // Mostrar IP pública (la pone el Service via broadcast → SharedPrefs)
+        String publicIp      = prefs.getString("public_ip", "");
+        String publicCountry = prefs.getString("public_country", "");
 
-        if (connected && !cachedPublicIp.isEmpty() && !cachedPublicIp.equals("Error") && !cachedPublicIp.equals("No disponible")) {
-            publicIpView.setText("IP Pública: " + cachedPublicIp + "  |  País: " + cachedCountry);
-        } else if (connected && cachedPublicIp.equals("No disponible")) {
-            publicIpView.setText("IP Pública: No disponible");
+        if (connected && !publicIp.isEmpty()) {
+            publicIpView.setText("IP Pública: " + publicIp +
+                (publicCountry.isEmpty() ? "" : "  |  País: " + publicCountry));
         } else if (connected) {
             publicIpView.setText("IP Pública: consultando...");
         } else {
