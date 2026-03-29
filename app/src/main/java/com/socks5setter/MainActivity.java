@@ -10,6 +10,10 @@ import android.view.MenuItem;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 public class MainActivity extends Activity {
     private static final int VPN_REQUEST = 1;
@@ -17,6 +21,9 @@ public class MainActivity extends Activity {
     private Handler handler = new Handler();
     private Runnable refreshRunnable;
     private Switch vpnSwitch;
+    private String cachedPublicIp = "";
+    private String cachedCountry = "";
+    private boolean fetchingPublicIp = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,8 +118,7 @@ public class MainActivity extends Activity {
     }
 
     private void startVpnService() {
-        Intent intent = new Intent(this, Socks5VpnService.class);
-        startService(intent);
+        startService(new Intent(this, Socks5VpnService.class));
     }
 
     private void stopVpn() {
@@ -140,21 +146,86 @@ public class MainActivity extends Activity {
         return "IP desconocida";
     }
 
+    private void fetchPublicIpInfo(boolean connected) {
+        if (fetchingPublicIp) return;
+        fetchingPublicIp = true;
+
+        new Thread(() -> {
+            try {
+                URL url = new URL("https://ipinfo.io/json");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+
+                BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+                br.close();
+
+                String json = sb.toString();
+                String ip = extractJson(json, "ip");
+                String country = extractJson(json, "country");
+                String city = extractJson(json, "city");
+                String org = extractJson(json, "org");
+
+                cachedPublicIp = ip;
+                cachedCountry = country + " - " + city + " - " + org;
+
+            } catch (Exception e) {
+                cachedPublicIp = "No disponible";
+                cachedCountry = "";
+            }
+            fetchingPublicIp = false;
+        }).start();
+    }
+
+    private String extractJson(String json, String key) {
+        try {
+            String search = "\"" + key + "\":\"";
+            int start = json.indexOf(search) + search.length();
+            int end = json.indexOf("\"", start);
+            return json.substring(start, end);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private void updateUI() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
         String host = prefs.getString("host", "No configurado");
         int port = prefs.getInt("port", 0);
         String user = prefs.getString("user", "");
+        String pass = prefs.getString("pass", "");
+        String alias = prefs.getString("alias", "");
         boolean connected = prefs.getBoolean("connected", false);
 
         TextView title = findViewById(R.id.title);
         TextView status = findViewById(R.id.status);
         TextView info = findViewById(R.id.info);
+        TextView publicIpView = findViewById(R.id.public_ip);
 
-        title.setText(getLocalIp());
+        // Título: alias o IP local
+        title.setText(alias.isEmpty() ? getLocalIp() : alias);
+
         status.setText(connected ? "● Conectado" : "○ Desconectado");
         status.setTextColor(connected ? 0xFF4CAF50 : 0xFFF44336);
-        info.setText("Servidor: " + host + "\nPuerto: " + port + "\nUsuario: " + (user.isEmpty() ? "Sin autenticación" : user));
+
+        info.setText(
+            "IPv4: " + getLocalIp() +
+            "\nServidor: " + host +
+            "\nPuerto: " + port +
+            "\nUsuario: " + (user.isEmpty() ? "Sin autenticación" : user) +
+            "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña" : pass)
+        );
+
+        // Obtener IP pública
+        fetchPublicIpInfo(connected);
+        if (!cachedPublicIp.isEmpty()) {
+            publicIpView.setText("IP Pública: " + cachedPublicIp + "\n" + cachedCountry);
+        } else {
+            publicIpView.setText("IP Pública: consultando...");
+        }
 
         if (vpnSwitch != null && vpnSwitch.isChecked() != connected) {
             vpnSwitch.setChecked(connected);
