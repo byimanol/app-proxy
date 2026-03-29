@@ -160,17 +160,17 @@ public class MainActivity extends Activity {
                     attempts++;
 
                     try {
-                        URL url = new URL("https://ipinfo.io/json");
-                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                        conn.setConnectTimeout(5000);
-                        conn.setReadTimeout(5000);
+                        // Usar curl que sí pasa por el túnel VPN
+                        Process process = Runtime.getRuntime().exec(
+                            new String[]{"curl", "-s", "--max-time", "5", "https://ipinfo.io/json"}
+                        );
 
-                        BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                        BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
                         StringBuilder sb = new StringBuilder();
                         String line;
                         while ((line = br.readLine()) != null) sb.append(line);
                         br.close();
-                        conn.disconnect();
+                        process.waitFor();
 
                         String json = sb.toString();
                         String ip = extractJson(json, "ip");
@@ -234,6 +234,7 @@ public class MainActivity extends Activity {
         TextView publicIpView = findViewById(R.id.public_ip);
 
         title.setText(alias.isEmpty() ? getLocalIp() : alias);
+
         status.setText(connected ? "● Conectado" : "○ Desconectado");
         status.setTextColor(connected ? 0xFF4CAF50 : 0xFFF44336);
 
@@ -245,6 +246,7 @@ public class MainActivity extends Activity {
             "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña" : pass)
         );
 
+        // Solo consultar cuando cambia de desconectado a conectado
         if (connected && !lastConnectedState) {
             getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
                 .remove("public_ip")
@@ -255,6 +257,7 @@ public class MainActivity extends Activity {
             fetchPublicIpInfo();
         }
 
+        // Resetear cuando se desconecta
         if (!connected && lastConnectedState) {
             cachedPublicIp = "";
             cachedCountry = "";
@@ -266,6 +269,7 @@ public class MainActivity extends Activity {
 
         lastConnectedState = connected;
 
+        // Cargar desde SharedPreferences si existe y no está en memoria
         if (cachedPublicIp.isEmpty()) {
             cachedPublicIp = prefs.getString("public_ip", "");
             cachedCountry = prefs.getString("public_country", "");
