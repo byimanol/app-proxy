@@ -333,6 +333,13 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String countryFlag(String countryCode) {
+        if (countryCode == null || countryCode.length() != 2) return "";
+        int a = Character.codePointAt(countryCode, 0) - 'A' + 0x1F1E6;
+        int b = Character.codePointAt(countryCode, 1) - 'A' + 0x1F1E6;
+        return new String(Character.toChars(a)) + new String(Character.toChars(b));
+    }
+
     private void updateUI() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
         String  host      = prefs.getString("host", "No configurado");
@@ -346,6 +353,7 @@ public class MainActivity extends Activity {
         TextView status       = findViewById(R.id.status);
         TextView info         = findViewById(R.id.info);
         TextView publicIpView = findViewById(R.id.public_ip);
+        TextView flagView     = findViewById(R.id.country_flag);
 
         title.setText(alias.isEmpty() ? getLocalIp() : alias);
         status.setText(connected ? "● Conectado" : "○ Desconectado");
@@ -385,10 +393,18 @@ public class MainActivity extends Activity {
         if (connected && !publicIp.isEmpty()) {
             publicIpView.setText("IP Pública: " + publicIp +
                 (publicCountry.isEmpty() ? "" : "  |  País: " + publicCountry));
+            if (!publicCountry.isEmpty()) {
+                flagView.setText(countryFlag(publicCountry));
+                flagView.setVisibility(android.view.View.VISIBLE);
+            } else {
+                flagView.setVisibility(android.view.View.GONE);
+            }
         } else if (connected) {
             publicIpView.setText("IP Pública: consultando...");
+            flagView.setVisibility(android.view.View.GONE);
         } else {
             publicIpView.setText("");
+            flagView.setVisibility(android.view.View.GONE);
         }
 
         if (vpnSwitch != null && vpnSwitch.isChecked() != connected) {
