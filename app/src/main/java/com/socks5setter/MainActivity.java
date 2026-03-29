@@ -24,6 +24,7 @@ public class MainActivity extends Activity {
     private String cachedPublicIp = "";
     private String cachedCountry = "";
     private boolean fetchingPublicIp = false;
+    private boolean lastConnectedState = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -146,7 +147,7 @@ public class MainActivity extends Activity {
         return "IP desconocida";
     }
 
-    private void fetchPublicIpInfo(boolean connected) {
+    private void fetchPublicIpInfo() {
         if (fetchingPublicIp) return;
         fetchingPublicIp = true;
 
@@ -154,8 +155,8 @@ public class MainActivity extends Activity {
             try {
                 URL url = new URL("https://ipinfo.io/json");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
 
                 BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                 StringBuilder sb = new StringBuilder();
@@ -164,16 +165,14 @@ public class MainActivity extends Activity {
                 br.close();
 
                 String json = sb.toString();
-                String ip = extractJson(json, "ip");
+                cachedPublicIp = extractJson(json, "ip");
                 String country = extractJson(json, "country");
                 String city = extractJson(json, "city");
                 String org = extractJson(json, "org");
-
-                cachedPublicIp = ip;
-                cachedCountry = country + " - " + city + " - " + org;
+                cachedCountry = country + " / " + city + " / " + org;
 
             } catch (Exception e) {
-                cachedPublicIp = "No disponible";
+                cachedPublicIp = "Error";
                 cachedCountry = "";
             }
             fetchingPublicIp = false;
@@ -219,12 +218,27 @@ public class MainActivity extends Activity {
             "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña" : pass)
         );
 
-        // Obtener IP pública
-        fetchPublicIpInfo(connected);
-        if (!cachedPublicIp.isEmpty()) {
-            publicIpView.setText("IP Pública: " + cachedPublicIp + "\n" + cachedCountry);
-        } else {
+        // Solo consultar IP pública cuando cambia a conectado
+        if (connected && !lastConnectedState) {
+            cachedPublicIp = "";
+            cachedCountry = "";
+            fetchPublicIpInfo();
+        }
+
+        // Resetear cuando se desconecta
+        if (!connected && lastConnectedState) {
+            cachedPublicIp = "";
+            cachedCountry = "";
+        }
+
+        lastConnectedState = connected;
+
+        if (connected && !cachedPublicIp.isEmpty() && !cachedPublicIp.equals("Error")) {
+            publicIpView.setText("IP Pública: " + cachedPublicIp + "\nPaís/Ciudad: " + cachedCountry);
+        } else if (connected) {
             publicIpView.setText("IP Pública: consultando...");
+        } else {
+            publicIpView.setText("");
         }
 
         if (vpnSwitch != null && vpnSwitch.isChecked() != connected) {

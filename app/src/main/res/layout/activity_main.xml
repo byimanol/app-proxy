@@ -38,7 +38,7 @@
 
     <TextView
         android:id="@+id/public_ip"
-        android:text="IP Pública: consultando..."
+        android:text=""
         android:textSize="13sp"
         android:textColor="#888888"
         android:lineSpacingExtra="6dp"
