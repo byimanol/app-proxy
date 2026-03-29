@@ -160,22 +160,22 @@ public class MainActivity extends Activity {
                     attempts++;
 
                     try {
-                        URL url = new URL("https://ipinfo.io/json");
-                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                        conn.setConnectTimeout(5000);
-                        conn.setReadTimeout(5000);
+                        // Usar curl que sí pasa por el túnel VPN
+                        Process process = Runtime.getRuntime().exec(
+                            new String[]{"curl", "-s", "--max-time", "5", "https://ipinfo.io/json"}
+                        );
 
-                        BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                        BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
                         StringBuilder sb = new StringBuilder();
                         String line;
                         while ((line = br.readLine()) != null) sb.append(line);
                         br.close();
+                        process.waitFor();
 
                         String json = sb.toString();
                         String ip = extractJson(json, "ip");
                         String country = extractJson(json, "country");
 
-                        // Si la IP es diferente a la local, el proxy está activo
                         if (!ip.isEmpty() && !ip.equals(getLocalIp())) {
                             cachedPublicIp = ip;
                             cachedCountry = country;
@@ -191,7 +191,7 @@ public class MainActivity extends Activity {
                 }
 
                 if (cachedPublicIp.isEmpty()) {
-                    cachedPublicIp = "Error";
+                    cachedPublicIp = "No disponible";
                     cachedCountry = "";
                 }
 
@@ -275,8 +275,10 @@ public class MainActivity extends Activity {
             cachedCountry = prefs.getString("public_country", "");
         }
 
-        if (connected && !cachedPublicIp.isEmpty() && !cachedPublicIp.equals("Error")) {
+        if (connected && !cachedPublicIp.isEmpty() && !cachedPublicIp.equals("Error") && !cachedPublicIp.equals("No disponible")) {
             publicIpView.setText("IP Pública: " + cachedPublicIp + "  |  País: " + cachedCountry);
+        } else if (connected && cachedPublicIp.equals("No disponible")) {
+            publicIpView.setText("IP Pública: No disponible");
         } else if (connected) {
             publicIpView.setText("IP Pública: consultando...");
         } else {
