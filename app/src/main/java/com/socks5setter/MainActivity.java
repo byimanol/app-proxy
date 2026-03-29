@@ -153,6 +153,9 @@ public class MainActivity extends Activity {
 
         new Thread(() -> {
             try {
+                // Esperar 8 segundos para que el proxy esté completamente activo
+                Thread.sleep(8000);
+
                 URL url = new URL("https://ipinfo.io/json");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(8000);
@@ -167,6 +170,12 @@ public class MainActivity extends Activity {
                 String json = sb.toString();
                 cachedPublicIp = extractJson(json, "ip");
                 cachedCountry = extractJson(json, "country");
+
+                // Guardar en SharedPreferences para persistir entre reinicios de la app
+                getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
+                    .putString("public_ip", cachedPublicIp)
+                    .putString("public_country", cachedCountry)
+                    .apply();
 
             } catch (Exception e) {
                 cachedPublicIp = "Error";
@@ -219,8 +228,12 @@ public class MainActivity extends Activity {
             "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña" : pass)
         );
 
-        // Solo consultar cuando cambia a conectado
+        // Solo consultar cuando cambia de desconectado a conectado
         if (connected && !lastConnectedState) {
+            getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
+                .remove("public_ip")
+                .remove("public_country")
+                .apply();
             cachedPublicIp = "";
             cachedCountry = "";
             fetchPublicIpInfo();
@@ -230,9 +243,19 @@ public class MainActivity extends Activity {
         if (!connected && lastConnectedState) {
             cachedPublicIp = "";
             cachedCountry = "";
+            getSharedPreferences("proxy_config", MODE_PRIVATE).edit()
+                .remove("public_ip")
+                .remove("public_country")
+                .apply();
         }
 
         lastConnectedState = connected;
+
+        // Cargar desde SharedPreferences si existe y no está en memoria
+        if (cachedPublicIp.isEmpty()) {
+            cachedPublicIp = prefs.getString("public_ip", "");
+            cachedCountry = prefs.getString("public_country", "");
+        }
 
         if (connected && !cachedPublicIp.isEmpty() && !cachedPublicIp.equals("Error")) {
             publicIpView.setText("IP Pública: " + cachedPublicIp + "  |  País: " + cachedCountry);
