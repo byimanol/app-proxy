@@ -21,11 +21,12 @@ public class ProxyContentProvider extends ContentProvider {
         int port = prefs.getInt("port", 0);
         String user = prefs.getString("user", "");
         String pass = prefs.getString("pass", "");
+        String alias = prefs.getString("alias", "");
         boolean connected = prefs.getBoolean("connected", false);
         String connectionString = String.format("%s:%s@%s:%d", user, pass, host, port);
 
-        MatrixCursor cursor = new MatrixCursor(new String[]{"proxy", "connected"});
-        cursor.addRow(new Object[]{connectionString, connected ? "true" : "false"});
+        MatrixCursor cursor = new MatrixCursor(new String[]{"proxy", "connected", "alias"});
+        cursor.addRow(new Object[]{connectionString, connected ? "true" : "false", alias});
         return cursor;
     }
 
