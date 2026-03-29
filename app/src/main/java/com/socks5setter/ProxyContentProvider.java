@@ -22,10 +22,9 @@ public class ProxyContentProvider extends ContentProvider {
         String user = prefs.getString("user", "");
         String pass = prefs.getString("pass", "");
         boolean connected = prefs.getBoolean("connected", false);
-        String connectionString = String.format("%s:%s@%s:%s", user, pass, host, port);
+        String connectionString = String.format("%s:%s@%s:%d", user, pass, host, port);
 
-        MatrixCursor cursor = new MatrixCursor(new String[]{"host", "port", "user", "pass", "connected"});
-        // cursor.addRow(new Object[]{host, port, user, pass, connected ? "true" : "false"});
+        MatrixCursor cursor = new MatrixCursor(new String[]{"proxy", "connected"});
         cursor.addRow(new Object[]{connectionString, connected ? "true" : "false"});
         return cursor;
     }
