@@ -79,7 +79,7 @@ public class Socks5VpnService extends VpnService {
         intent.putExtra(Constants.INTENT_ROUTE, "bypass-lan");
         intent.putExtra(Constants.INTENT_DNS, "8.8.8.8");
         intent.putExtra(Constants.INTENT_DNS_PORT, 53);
-        intent.putExtra(Constants.INTENT_IPV6_PROXY, false);
+        intent.putExtra(Constants.INTENT_IPV6_PROXY, true);
         
         startService(intent);
         
