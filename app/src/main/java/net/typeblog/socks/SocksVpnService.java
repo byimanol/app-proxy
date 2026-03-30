@@ -16,10 +16,6 @@ import android.util.Log;
 import net.typeblog.socks.util.Routes;
 import net.typeblog.socks.util.Utility;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -122,101 +118,7 @@ public class SocksVpnService extends VpnService {
 
         Log.d(TAG, "VPN Connection established successfully");
 
-        // Esperar un momento y luego obtener la IP pública desde dentro del túnel
-        fetchPublicIpFromTunnel();
-
         return START_STICKY;
-    }
-
-    /**
-     * Hace el request HTTP a ipinfo.io desde dentro del túnel VPN.
-     *
-     * IMPORTANTE: Este método corre en el SocksVpnService. El tráfico de este
-     * proceso NO está excluido del túnel (solo excluimos "com.socks5setter" en
-     * configure(), que es la app principal). Por lo tanto, HttpURLConnection aquí
-     * SÍ pasa por el proxy SOCKS5 y devuelve la IP real del proxy.
-     *
-     * Cuando obtiene la IP, la guarda en SharedPreferences Y manda un broadcast
-     * para que MainActivity la muestre de inmediato.
-     */
-    private void fetchPublicIpFromTunnel() {
-        new Thread(() -> {
-            // Esperar a que el túnel esté completamente listo
-            try { Thread.sleep(4000); } catch (Exception ignored) {}
-
-            String ip      = "";
-            String country = "";
-
-            for (int attempt = 0; attempt < 10 && ip.isEmpty(); attempt++) {
-                try {
-                    URL url = new URL("https://ipinfo.io/json");
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(7000);
-                    conn.setReadTimeout(7000);
-                    conn.setRequestMethod("GET");
-                    conn.setRequestProperty("Accept", "application/json");
-
-                    int responseCode = conn.getResponseCode();
-                    if (responseCode == 200) {
-                        BufferedReader br = new BufferedReader(
-                            new InputStreamReader(conn.getInputStream()));
-                        StringBuilder sb = new StringBuilder();
-                        String line;
-                        while ((line = br.readLine()) != null) sb.append(line);
-                        br.close();
-                        conn.disconnect();
-
-                        String json = sb.toString();
-                        ip      = extractJson(json, "ip");
-                        country = extractJson(json, "country");
-
-                        Log.d(TAG, "Public IP from tunnel: " + ip + " / " + country);
-                    } else {
-                        conn.disconnect();
-                    }
-
-                } catch (Exception e) {
-                    Log.w(TAG, "Attempt " + (attempt + 1) + " failed: " + e.getMessage());
-                }
-
-                if (ip.isEmpty()) {
-                    try { Thread.sleep(3000); } catch (Exception ignored) {}
-                }
-            }
-
-            if (ip.isEmpty()) ip = "No disponible";
-
-            // Guardar en SharedPreferences
-            getSharedPreferences("proxy_config", android.content.Context.MODE_PRIVATE)
-                .edit()
-                .putString("public_ip", ip)
-                .putString("public_country", country)
-                .apply();
-
-            // Mandar broadcast a MainActivity para actualizar la UI de inmediato
-            Intent broadcast = new Intent("com.socks5setter.PUBLIC_IP_RESULT");
-            broadcast.putExtra("ip", ip);
-            broadcast.putExtra("country", country);
-            sendBroadcast(broadcast);
-
-        }).start();
-    }
-
-    private String extractJson(String json, String key) {
-        try {
-            String search = "\"" + key + "\": \"";
-            int start = json.indexOf(search);
-            if (start == -1) {
-                search = "\"" + key + "\":\"";
-                start = json.indexOf(search);
-            }
-            if (start == -1) return "";
-            start += search.length();
-            int end = json.indexOf("\"", start);
-            return json.substring(start, end).trim();
-        } catch (Exception e) {
-            return "";
-        }
     }
 
     @Override
