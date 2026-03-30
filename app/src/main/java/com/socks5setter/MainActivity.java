@@ -226,7 +226,7 @@ public class MainActivity extends Activity {
                     }
 
                     // ── 4. CONNECT → ipinfo.io:80 (HTTP plano, sin TLS) ───────
-                    String targetHost = "ipinfo.io";
+                    String targetHost = "ipv6.ipinfo.io";
                     int    targetPort = 80;
                     byte[] hostBytes  = targetHost.getBytes("UTF-8");
 
@@ -259,7 +259,7 @@ public class MainActivity extends Activity {
                     // ── 5. HTTP GET a través del túnel SOCKS5 ─────────────────
                     String httpRequest =
                         "GET /json HTTP/1.1\r\n" +
-                        "Host: ipinfo.io\r\n" +
+                        "Host: ipv6.ipinfo.io\r\n" +
                         "Accept: application/json\r\n" +
                         "Connection: close\r\n\r\n";
                     out.write(httpRequest.getBytes("UTF-8"));
