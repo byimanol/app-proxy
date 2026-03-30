@@ -146,18 +146,6 @@ public class MainActivity extends Activity {
         return "IP desconocida";
     }
 
-    /**
-     * Obtiene la IP pública conectándose DIRECTAMENTE al proxy SOCKS5
-     * usando un socket Java puro (sin pasar por el túnel VPN).
-     *
-     * ¿Por qué funciona?
-     * - addDisallowedApplication("com.socks5setter") excluye TODA nuestra app
-     *   del túnel, así que nuestros sockets salen por la red real.
-     * - Eso nos permite conectarnos directamente al servidor SOCKS5.
-     * - Hacemos el handshake SOCKS5 manualmente y pedimos al proxy que se
-     *   conecte a ipinfo.io por nosotros.
-     * - ipinfo.io ve la IP del proxy → nos devuelve la IP del proxy. ✓
-     */
     private void fetchPublicIpViaSocks5Direct() {
         if (fetchingPublicIp) return;
         fetchingPublicIp = true;
@@ -175,7 +163,16 @@ public class MainActivity extends Activity {
             // Dar tiempo al túnel para establecerse
             try { Thread.sleep(3000); } catch (Exception ignored) {}
 
+            // Intentar primero IPv4, luego IPv6 si falla
+            // Así funciona con proxies IPv4 normales Y con proxies IPv6 only
+            String[] endpoints = { "ipinfo.io", "ipv6.ipinfo.io" };
+
+            outer:
             for (int attempt = 0; attempt < 10 && ip.isEmpty(); attempt++) {
+                // Alternar endpoint: los primeros 5 intentos con ipinfo.io,
+                // si todos fallan los siguientes 5 con ipv6.ipinfo.io
+                String targetHost = endpoints[attempt < 5 ? 0 : 1];
+
                 try {
                     // ── 1. Conectar al proxy SOCKS5 directamente ──────────────
                     Socket socket = new Socket();
@@ -185,12 +182,12 @@ public class MainActivity extends Activity {
                     OutputStream out = socket.getOutputStream();
                     InputStream  in  = socket.getInputStream();
 
-                    // ── 2. Greeting: anunciar métodos de autenticación ────────
+                    // ── 2. Greeting ───────────────────────────────────────────
                     boolean needsAuth = proxyUser != null && !proxyUser.isEmpty();
                     if (needsAuth) {
-                        out.write(new byte[]{0x05, 0x02, 0x00, 0x02}); // no-auth + user/pass
+                        out.write(new byte[]{0x05, 0x02, 0x00, 0x02});
                     } else {
-                        out.write(new byte[]{0x05, 0x01, 0x00});        // solo no-auth
+                        out.write(new byte[]{0x05, 0x01, 0x00});
                     }
                     out.flush();
 
@@ -225,16 +222,15 @@ public class MainActivity extends Activity {
                         throw new IOException("Método de auth no aceptado: " + methodResp[1]);
                     }
 
-                    // ── 4. CONNECT → ipinfo.io:80 (HTTP plano, sin TLS) ───────
-                    String targetHost = "ipv6.ipinfo.io";
+                    // ── 4. CONNECT al endpoint ────────────────────────────────
                     int    targetPort = 80;
                     byte[] hostBytes  = targetHost.getBytes("UTF-8");
 
                     ByteArrayOutputStream connectReq = new ByteArrayOutputStream();
-                    connectReq.write(0x05); // VER
-                    connectReq.write(0x01); // CMD: CONNECT
-                    connectReq.write(0x00); // RSV
-                    connectReq.write(0x03); // ATYP: dominio
+                    connectReq.write(0x05);
+                    connectReq.write(0x01);
+                    connectReq.write(0x00);
+                    connectReq.write(0x03);
                     connectReq.write(hostBytes.length);
                     connectReq.write(hostBytes);
                     connectReq.write((targetPort >> 8) & 0xFF);
@@ -242,30 +238,33 @@ public class MainActivity extends Activity {
                     out.write(connectReq.toByteArray());
                     out.flush();
 
-                    // Leer respuesta CONNECT (4 bytes fijos + dirección variable)
                     byte[] connResp = new byte[4];
                     readFully(in, connResp);
                     if (connResp[1] != 0x00) {
                         socket.close();
-                        throw new IOException("SOCKS5 CONNECT rechazado, código: " + connResp[1]);
-                    }
-                    // Consumir BND.ADDR y BND.PORT según el tipo de dirección
-                    switch (connResp[3]) {
-                        case 0x01: readFully(in, new byte[6]);           break; // IPv4 + port
-                        case 0x03: readFully(in, new byte[in.read()+2]); break; // dominio + port
-                        case 0x04: readFully(in, new byte[18]);          break; // IPv6 + port
+                        // Código 4 = host unreachable, probablemente proxy IPv6 only
+                        // o proxy IPv4 sin alcance IPv6 → pasar al siguiente endpoint
+                        android.util.Log.w("MainActivity",
+                            "CONNECT rechazado en " + targetHost + " código: " + connResp[1] + ", cambiando endpoint");
+                        continue;
                     }
 
-                    // ── 5. HTTP GET a través del túnel SOCKS5 ─────────────────
+                    switch (connResp[3]) {
+                        case 0x01: readFully(in, new byte[6]);           break;
+                        case 0x03: readFully(in, new byte[in.read()+2]); break;
+                        case 0x04: readFully(in, new byte[18]);          break;
+                    }
+
+                    // ── 5. HTTP GET ───────────────────────────────────────────
                     String httpRequest =
                         "GET /json HTTP/1.1\r\n" +
-                        "Host: ipv6.ipinfo.io\r\n" +
+                        "Host: " + targetHost + "\r\n" +
                         "Accept: application/json\r\n" +
                         "Connection: close\r\n\r\n";
                     out.write(httpRequest.getBytes("UTF-8"));
                     out.flush();
 
-                    // ── 6. Leer cuerpo HTTP (saltar headers) ──────────────────
+                    // ── 6. Leer cuerpo HTTP ───────────────────────────────────
                     BufferedReader br = new BufferedReader(new InputStreamReader(in, "UTF-8"));
                     StringBuilder body = new StringBuilder();
                     boolean headersDone = false;
@@ -282,9 +281,12 @@ public class MainActivity extends Activity {
                     ip      = extractJson(body.toString(), "ip");
                     country = extractJson(body.toString(), "country");
 
+                    android.util.Log.d("MainActivity",
+                        "IP obtenida via " + targetHost + ": " + ip + " / " + country);
+
                 } catch (Exception e) {
                     android.util.Log.w("MainActivity",
-                        "Intento " + (attempt + 1) + " fallido: " + e.getMessage());
+                        "Intento " + (attempt + 1) + " (" + targetHost + ") fallido: " + e.getMessage());
                     ip = "";
                     country = "";
                 }
@@ -306,7 +308,6 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    /** Lee exactamente buf.length bytes del stream. */
     private void readFully(InputStream in, byte[] buf) throws IOException {
         int offset = 0;
         while (offset < buf.length) {
@@ -367,7 +368,6 @@ public class MainActivity extends Activity {
             "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña" : pass)
         );
 
-        // Conectado → limpiar IP vieja y disparar fetch
         if (connected && !lastConnectedState) {
             prefs.edit()
                 .remove("public_ip")
@@ -376,7 +376,6 @@ public class MainActivity extends Activity {
             fetchPublicIpViaSocks5Direct();
         }
 
-        // Desconectado → limpiar
         if (!connected && lastConnectedState) {
             prefs.edit()
                 .remove("public_ip")
