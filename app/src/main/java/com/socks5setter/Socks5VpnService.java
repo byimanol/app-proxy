@@ -8,6 +8,7 @@ import android.net.VpnService;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 import net.typeblog.socks.IVpnService;
@@ -18,6 +19,10 @@ public class Socks5VpnService extends VpnService {
     private IVpnService vpnServiceInterface;
     private Handler handler = new Handler(Looper.getMainLooper());
     private Runnable statusCheckRunnable;
+
+    // --- QUIC blocker ---
+    private UdpQuicBlocker mQuicBlocker;
+    private Thread         mQuicBlockerThread;
 
     private ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
@@ -82,16 +87,20 @@ public class Socks5VpnService extends VpnService {
         intent.putExtra(Constants.INTENT_IPV6_PROXY, true);
         
         startService(intent);
+
+        // --- Arrancar bloqueador QUIC (UDP 443) ---
+        startQuicBlocker();
         
         // Bind to the VPN service to monitor its status
         Intent bindIntent = new Intent(this, net.typeblog.socks.SocksVpnService.class);
         bindService(bindIntent, serviceConnection, BIND_AUTO_CREATE);
         
-        Log.d(TAG, "VPN service started with host: " + host + ", monitoring connection...");
+        Log.d(TAG, "VPN service started with host: " + host + ", QUIC blocker activo");
     }
 
     private void stopVpn() {
         stopStatusCheck();
+        stopQuicBlocker();
         
         try {
             unbindService(serviceConnection);
@@ -155,6 +164,7 @@ public class Socks5VpnService extends VpnService {
     @Override
     public void onDestroy() {
         stopStatusCheck();
+        stopQuicBlocker();
         try {
             unbindService(serviceConnection);
         } catch (Exception e) {
@@ -162,4 +172,69 @@ public class Socks5VpnService extends VpnService {
         }
         super.onDestroy();
     }
+
+    // ---------------------------------------------------------------
+    // QUIC Blocker — bloquea UDP 443 para forzar fallback TCP en Chrome
+    // ---------------------------------------------------------------
+    private void startQuicBlocker() {
+        stopQuicBlocker();
+        try {
+            // Crear una interfaz VPN temporal solo para leer/escribir paquetes
+            // y filtrar QUIC. Usamos el mismo fd del túnel activo via /proc/self/fd
+            // Buscamos el fd del tun0 abierto por tun2socks
+            java.io.File fdDir = new java.io.File("/proc/self/fd");
+            java.io.FileDescriptor tunFd = null;
+
+            if (fdDir.exists()) {
+                for (String fdName : fdDir.list()) {
+                    try {
+                        String link = new java.io.File("/proc/self/fd/" + fdName).getCanonicalPath();
+                        if (link.contains("tun")) {
+                            // Abrir directamente por número de fd
+                            int fdNum = Integer.parseInt(fdName);
+                            tunFd = getFdByNumber(fdNum);
+                            if (tunFd != null) break;
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            if (tunFd == null) {
+                Log.w(TAG, "No se encontró fd del túnel, QUIC blocker no iniciado");
+                return;
+            }
+
+            mQuicBlocker = new UdpQuicBlocker(tunFd);
+            mQuicBlockerThread = new Thread(mQuicBlocker, "QuicBlocker");
+            mQuicBlockerThread.setDaemon(true);
+            mQuicBlockerThread.start();
+            Log.d(TAG, "QUIC blocker iniciado correctamente");
+        } catch (Exception e) {
+            Log.e(TAG, "Error iniciando QUIC blocker: " + e.getMessage());
+        }
+    }
+
+    private java.io.FileDescriptor getFdByNumber(int fdNum) {
+        try {
+            java.lang.reflect.Field f = java.io.FileDescriptor.class.getDeclaredField("descriptor");
+            f.setAccessible(true);
+            java.io.FileDescriptor fd = new java.io.FileDescriptor();
+            f.setInt(fd, fdNum);
+            return fd;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void stopQuicBlocker() {
+        if (mQuicBlocker != null) {
+            mQuicBlocker.stop();
+            mQuicBlocker = null;
+        }
+        if (mQuicBlockerThread != null) {
+            mQuicBlockerThread.interrupt();
+            mQuicBlockerThread = null;
+        }
+    }
+
 }
