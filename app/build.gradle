@@ -1,17 +1,27 @@
-apply plugin: 'com.android.application'
+plugins {
+    id 'com.android.application'
+}
+
 android {
-    compileSdkVersion 33
+    compileSdk 33
     namespace "com.socks5setter"
+
     defaultConfig {
         applicationId "com.socks5setter"
-        minSdkVersion 21
-        targetSdkVersion 33
-        versionCode 1
-        versionName "1.0"
+        minSdk 21
+        targetSdk 33
+        versionCode 2
+        versionName "1.1"
     }
+
     sourceSets {
         main {
             jniLibs.srcDirs = ['src/main/jniLibs']
         }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 }

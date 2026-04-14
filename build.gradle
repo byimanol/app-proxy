@@ -1,17 +1,4 @@
-apply plugin: 'com.android.application'
-android {
-    compileSdkVersion 33
-    namespace "com.socks5setter"
-    defaultConfig {
-        applicationId "com.socks5setter"
-        minSdkVersion 21
-        targetSdkVersion 33
-        versionCode 1
-        versionName "1.0"
-    }
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ['src/main/jniLibs']
-        }
-    }
+// Top-level build file
+plugins {
+    id 'com.android.application' version '8.0.2' apply false
 }
