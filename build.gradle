@@ -1,4 +1,28 @@
-// Top-level build file
 plugins {
-    id 'com.android.application' version '8.0.2' apply false
+    id 'com.android.application'
+}
+
+android {
+    compileSdk 33
+    namespace "com.socks5setter"
+
+    defaultConfig {
+        applicationId "com.socks5setter"
+        minSdk 21
+        targetSdk 33
+        versionCode 2
+        versionName "1.1"
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+            aidl.srcDirs = ['src/main/aidl']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
 }
