@@ -1,28 +1,10 @@
-plugins {
-    id 'com.android.application'
-}
-
-android {
-    compileSdk 33
-    namespace "com.socks5setter"
-
-    defaultConfig {
-        applicationId "com.socks5setter"
-        minSdk 21
-        targetSdk 33
-        versionCode 2
-        versionName "1.1"
+// Top-level build file
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
     }
-
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ['src/main/jniLibs']
-            aidl.srcDirs = ['src/main/aidl']
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.4.2'
     }
 }
