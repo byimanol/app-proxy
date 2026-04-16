@@ -7,7 +7,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.widget.CompoundButton;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -18,33 +17,13 @@ public class MainActivity extends Activity {
 
     private Handler  handler = new Handler();
     private Runnable refreshRunnable;
-
-    private Switch vpnSwitch;
-    private Switch bypassSwitch;
-
-    private boolean updatingUI = false; // evita loops de listener
+    private Switch   vpnSwitch;
+    private boolean  updatingUI = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        // Toggle bypass en la pantalla principal
-        bypassSwitch = findViewById(R.id.switch_bypass);
-        bypassSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
-            if (updatingUI) return;
-            SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
-            boolean connected = prefs.getBoolean("connected", false);
-            if (!connected) {
-                // No tiene sentido bypass si la VPN no está activa
-                Toast.makeText(this, "Activa la VPN primero", Toast.LENGTH_SHORT).show();
-                updatingUI = true;
-                bypassSwitch.setChecked(false);
-                updatingUI = false;
-                return;
-            }
-            setBypasMode(isChecked);
-        });
 
         if (getIntent().getBooleanExtra("request_vpn", false)) {
             requestVpnPermission();
@@ -110,22 +89,13 @@ public class MainActivity extends Activity {
         if (requestCode == VPN_REQUEST && resultCode == RESULT_OK) {
             startService(new Intent(this, Socks5VpnService.class));
         } else if (requestCode == VPN_REQUEST) {
-            if (vpnSwitch != null) { updatingUI = true; vpnSwitch.setChecked(false); updatingUI = false; }
+            updatingUI = true;
+            if (vpnSwitch != null) vpnSwitch.setChecked(false);
+            updatingUI = false;
             Toast.makeText(this, "Permiso de VPN denegado", Toast.LENGTH_SHORT).show();
         } else if (requestCode == CONFIG_REQUEST) {
             updateUI();
         }
-    }
-
-    // ------------------------------------------------------------------
-    private void setBypasMode(boolean bypass) {
-        Intent i = new Intent(this, Socks5VpnService.class);
-        i.setAction(Socks5VpnService.ACTION_SET_BYPASS);
-        i.putExtra(Socks5VpnService.EXTRA_BYPASS, bypass);
-        startService(i);
-
-        String msg = bypass ? "Bypass activado — red original" : "Proxy restaurado";
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 
     private boolean isProxyConfigured() {
@@ -147,13 +117,13 @@ public class MainActivity extends Activity {
 
     private String getLocalIp() {
         try {
-            java.util.Enumeration<java.net.NetworkInterface> interfaces =
+            java.util.Enumeration<java.net.NetworkInterface> ifaces =
                 java.net.NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                java.net.NetworkInterface iface = interfaces.nextElement();
-                java.util.Enumeration<java.net.InetAddress> addresses = iface.getInetAddresses();
-                while (addresses.hasMoreElements()) {
-                    java.net.InetAddress addr = addresses.nextElement();
+            while (ifaces.hasMoreElements()) {
+                java.net.NetworkInterface iface = ifaces.nextElement();
+                java.util.Enumeration<java.net.InetAddress> addrs = iface.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    java.net.InetAddress addr = addrs.nextElement();
                     if (!addr.isLoopbackAddress() && addr instanceof java.net.Inet4Address)
                         return addr.getHostAddress();
                 }
@@ -164,49 +134,45 @@ public class MainActivity extends Activity {
 
     private void updateUI() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
-        String  host      = prefs.getString("host", "No configurado");
+        String  host      = prefs.getString("host",  "No configurado");
         int     port      = prefs.getInt("port", 0);
-        String  user      = prefs.getString("user", "");
-        String  pass      = prefs.getString("pass", "");
+        String  user      = prefs.getString("user",  "");
         String  alias     = prefs.getString("alias", "");
-        boolean connected = prefs.getBoolean("connected", false);
+        boolean connected = prefs.getBoolean("connected",   false);
         boolean bypass    = prefs.getBoolean("bypass_mode", false);
 
-        TextView title      = findViewById(R.id.title);
-        TextView status     = findViewById(R.id.status);
-        TextView info       = findViewById(R.id.info);
-        TextView bypassDesc = findViewById(R.id.bypass_desc);
+        TextView title       = findViewById(R.id.title);
+        TextView status      = findViewById(R.id.status);
+        TextView info        = findViewById(R.id.info);
+        TextView bypassLabel = findViewById(R.id.bypass_label);
 
         title.setText(alias.isEmpty() ? getLocalIp() : alias);
 
         if (connected && bypass) {
             status.setText("⇄ Bypass activo");
-            status.setTextColor(0xFFFF9800); // naranja
+            status.setTextColor(0xFFFF9800);
         } else if (connected) {
             status.setText("● Conectado");
-            status.setTextColor(0xFF4CAF50); // verde
+            status.setTextColor(0xFF4CAF50);
         } else {
             status.setText("○ Desconectado");
-            status.setTextColor(0xFFF44336); // rojo
+            status.setTextColor(0xFFF44336);
         }
 
-        bypassDesc.setText(bypass
-            ? "Tráfico saliendo por red original"
-            : "VPN activa, tráfico por proxy");
+        // Indicador bypass — solo texto
+        bypassLabel.setText("Bypass: " + (bypass ? "Activado" : "Desactivado"));
+        bypassLabel.setTextColor(bypass ? 0xFFFF9800 : 0xFF888888);
 
         info.setText(
-            "IPv4: "         + getLocalIp()  +
-            "\nServidor: "   + host           +
-            "\nPuerto: "     + port           +
-            "\nUsuario: "    + (user.isEmpty() ? "Sin autenticación" : user) +
-            "\nContraseña: " + (pass.isEmpty() ? "Sin contraseña"    : pass)
+            "IPv4: "       + getLocalIp() +
+            "\nServidor: " + host +
+            "\nPuerto: "   + port +
+            "\nUsuario: "  + (user.isEmpty() ? "Sin autenticación" : user)
         );
 
         updatingUI = true;
         if (vpnSwitch != null && vpnSwitch.isChecked() != connected)
             vpnSwitch.setChecked(connected);
-        if (bypassSwitch != null && bypassSwitch.isChecked() != bypass)
-            bypassSwitch.setChecked(bypass);
         updatingUI = false;
     }
 }
