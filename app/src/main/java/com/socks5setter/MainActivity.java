@@ -25,16 +25,22 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        if (getIntent().getBooleanExtra("request_vpn", false)) {
-            requestVpnPermission();
-        }
-
         refreshRunnable = new Runnable() {
             @Override public void run() {
                 updateUI();
                 handler.postDelayed(this, 1000);
             }
         };
+
+        // Pedir permiso VPN al abrir la app si el túnel no está activo todavía
+        SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
+        boolean connected = prefs.getBoolean("connected", false);
+        boolean bypass    = prefs.getBoolean("bypass_mode", false);
+        boolean tunnelActive = connected || bypass;
+
+        if (!tunnelActive || getIntent().getBooleanExtra("request_vpn", false)) {
+            requestVpnPermission();
+        }
     }
 
     @Override protected void onResume() {
@@ -58,14 +64,6 @@ public class MainActivity extends Activity {
                 vpnSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
                     if (updatingUI) return;
                     if (isChecked) {
-                        if (!isProxyConfigured()) {
-                            Toast.makeText(this, "Configura el proxy primero",
-                                           Toast.LENGTH_SHORT).show();
-                            updatingUI = true;
-                            vpnSwitch.setChecked(false);
-                            updatingUI = false;
-                            return;
-                        }
                         requestVpnPermission();
                     } else {
                         sendBypass(true); // switch OFF → bypass → "Desconectado"
@@ -89,11 +87,11 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == VPN_REQUEST && resultCode == RESULT_OK) {
+            // Permiso concedido → arrancar el servicio (se conecta en bypass
+            // si no hay proxy, o con proxy si ya está configurado)
             startService(new Intent(this, Socks5VpnService.class));
         } else if (requestCode == VPN_REQUEST) {
-            updatingUI = true;
-            if (vpnSwitch != null) vpnSwitch.setChecked(false);
-            updatingUI = false;
+            // Usuario denegó el permiso — mostrar aviso pero no hacer nada más
             Toast.makeText(this, "Permiso de VPN denegado", Toast.LENGTH_SHORT).show();
         } else if (requestCode == CONFIG_REQUEST) {
             updateUI();
@@ -104,7 +102,6 @@ public class MainActivity extends Activity {
         Intent i = new Intent(this, Socks5VpnService.class);
         i.setAction(Socks5VpnService.ACTION_SET_BYPASS);
         i.putExtra(Socks5VpnService.EXTRA_BYPASS, bypass);
-        // Actualizar prefs para que updateUI refleje el estado correcto
         getSharedPreferences("proxy_config", MODE_PRIVATE)
             .edit()
             .putBoolean("bypass_mode", bypass)
@@ -113,15 +110,15 @@ public class MainActivity extends Activity {
         startService(i);
     }
 
-    private boolean isProxyConfigured() {
-        return !getSharedPreferences("proxy_config", MODE_PRIVATE)
-                .getString("host", "").isEmpty();
-    }
-
     private void requestVpnPermission() {
         Intent intent = VpnService.prepare(this);
-        if (intent != null) startActivityForResult(intent, VPN_REQUEST);
-        else startService(new Intent(this, Socks5VpnService.class));
+        if (intent != null) {
+            // Android muestra el diálogo de permiso VPN
+            startActivityForResult(intent, VPN_REQUEST);
+        } else {
+            // Permiso ya concedido anteriormente → arrancar directo
+            startService(new Intent(this, Socks5VpnService.class));
+        }
     }
 
     private String getLocalIp() {
@@ -156,8 +153,6 @@ public class MainActivity extends Activity {
 
         title.setText(alias.isEmpty() ? getLocalIp() : alias);
 
-        // connected=true y bypass=false → "● Conectado" verde
-        // connected=false o bypass=true → "○ Desconectado" rojo
         boolean showConnected = connected && !bypass;
         status.setText(showConnected ? "● Conectado" : "○ Desconectado");
         status.setTextColor(showConnected ? 0xFF4CAF50 : 0xFFF44336);
@@ -169,7 +164,6 @@ public class MainActivity extends Activity {
             "\nUsuario: "  + (user.isEmpty() ? "Sin autenticación" : user)
         );
 
-        // Sincronizar switch sin disparar el listener
         updatingUI = true;
         if (vpnSwitch != null && vpnSwitch.isChecked() != showConnected)
             vpnSwitch.setChecked(showConnected);
