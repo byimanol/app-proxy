@@ -52,13 +52,15 @@ public class MainActivity extends Activity {
         getMenuInflater().inflate(R.menu.main, menu);
         MenuItem switchItem = menu.findItem(R.id.switch_main);
         if (switchItem != null) {
-            vpnSwitch = (Switch) switchItem.getActionView().findViewById(R.id.switch_action_button);
+            vpnSwitch = (Switch) switchItem.getActionView()
+                                           .findViewById(R.id.switch_action_button);
             if (vpnSwitch != null) {
                 vpnSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
                     if (updatingUI) return;
                     if (isChecked) {
                         if (!isProxyConfigured()) {
-                            Toast.makeText(this, "Configura el proxy primero", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, "Configura el proxy primero",
+                                           Toast.LENGTH_SHORT).show();
                             updatingUI = true;
                             vpnSwitch.setChecked(false);
                             updatingUI = false;
@@ -66,7 +68,7 @@ public class MainActivity extends Activity {
                         }
                         requestVpnPermission();
                     } else {
-                        stopVpn();
+                        sendBypass(true); // switch OFF → bypass → "Desconectado"
                     }
                 });
             }
@@ -98,6 +100,19 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void sendBypass(boolean bypass) {
+        Intent i = new Intent(this, Socks5VpnService.class);
+        i.setAction(Socks5VpnService.ACTION_SET_BYPASS);
+        i.putExtra(Socks5VpnService.EXTRA_BYPASS, bypass);
+        // Actualizar prefs para que updateUI refleje el estado correcto
+        getSharedPreferences("proxy_config", MODE_PRIVATE)
+            .edit()
+            .putBoolean("bypass_mode", bypass)
+            .putBoolean("connected", !bypass)
+            .apply();
+        startService(i);
+    }
+
     private boolean isProxyConfigured() {
         return !getSharedPreferences("proxy_config", MODE_PRIVATE)
                 .getString("host", "").isEmpty();
@@ -107,12 +122,6 @@ public class MainActivity extends Activity {
         Intent intent = VpnService.prepare(this);
         if (intent != null) startActivityForResult(intent, VPN_REQUEST);
         else startService(new Intent(this, Socks5VpnService.class));
-    }
-
-    private void stopVpn() {
-        Intent i = new Intent(this, Socks5VpnService.class);
-        i.setAction(Socks5VpnService.ACTION_STOP);
-        startService(i);
     }
 
     private String getLocalIp() {
@@ -141,27 +150,17 @@ public class MainActivity extends Activity {
         boolean connected = prefs.getBoolean("connected",   false);
         boolean bypass    = prefs.getBoolean("bypass_mode", false);
 
-        TextView title       = findViewById(R.id.title);
-        TextView status      = findViewById(R.id.status);
-        TextView info        = findViewById(R.id.info);
-        TextView bypassLabel = findViewById(R.id.bypass_label);
+        TextView title  = findViewById(R.id.title);
+        TextView status = findViewById(R.id.status);
+        TextView info   = findViewById(R.id.info);
 
         title.setText(alias.isEmpty() ? getLocalIp() : alias);
 
-        if (connected && bypass) {
-            status.setText("⇄ Bypass activo");
-            status.setTextColor(0xFFFF9800);
-        } else if (connected) {
-            status.setText("● Conectado");
-            status.setTextColor(0xFF4CAF50);
-        } else {
-            status.setText("○ Desconectado");
-            status.setTextColor(0xFFF44336);
-        }
-
-        // Indicador bypass — solo texto
-        bypassLabel.setText("Bypass: " + (bypass ? "Activado" : "Desactivado"));
-        bypassLabel.setTextColor(bypass ? 0xFFFF9800 : 0xFF888888);
+        // connected=true y bypass=false → "● Conectado" verde
+        // connected=false o bypass=true → "○ Desconectado" rojo
+        boolean showConnected = connected && !bypass;
+        status.setText(showConnected ? "● Conectado" : "○ Desconectado");
+        status.setTextColor(showConnected ? 0xFF4CAF50 : 0xFFF44336);
 
         info.setText(
             "IPv4: "       + getLocalIp() +
@@ -170,9 +169,10 @@ public class MainActivity extends Activity {
             "\nUsuario: "  + (user.isEmpty() ? "Sin autenticación" : user)
         );
 
+        // Sincronizar switch sin disparar el listener
         updatingUI = true;
-        if (vpnSwitch != null && vpnSwitch.isChecked() != connected)
-            vpnSwitch.setChecked(connected);
+        if (vpnSwitch != null && vpnSwitch.isChecked() != showConnected)
+            vpnSwitch.setChecked(showConnected);
         updatingUI = false;
     }
 }
