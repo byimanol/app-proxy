@@ -1,262 +1,211 @@
-package net.typeblog.socks;
+package com.socks5setter;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.net.VpnService;
-import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
-import android.text.TextUtils;
 import android.util.Log;
 
-import net.typeblog.socks.util.Routes;
-import net.typeblog.socks.util.Utility;
+import net.typeblog.socks.IVpnService;
+import net.typeblog.socks.util.Constants;
 
-import java.util.Locale;
-import java.util.Objects;
+public class Socks5VpnService extends VpnService {
+    private static final String TAG = "Socks5VpnService";
 
-import static net.typeblog.socks.util.Constants.*;
+    public static final String ACTION_STOP       = "STOP";
+    public static final String ACTION_SET_BYPASS = "SET_BYPASS";
+    public static final String EXTRA_BYPASS      = "bypass_mode";
 
-public class SocksVpnService extends VpnService {
+    private IVpnService          vpnServiceInterface;
+    private Handler              handler = new Handler(Looper.getMainLooper());
+    private Runnable             statusCheckRunnable;
+    private ParcelFileDescriptor bypassPfd;
 
-    class VpnBinder extends IVpnService.Stub {
+    private ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
-        public boolean isRunning() { return mRunning; }
-
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            vpnServiceInterface = IVpnService.Stub.asInterface(service);
+            startStatusCheck();
+        }
         @Override
-        public void stop() { stopMe(); }
-    }
-
-    private static final String TAG = SocksVpnService.class.getSimpleName();
-
-    private ParcelFileDescriptor mInterface;
-    private boolean mRunning = false;
-    private final IBinder mBinder = new VpnBinder();
-    private String mCurrentServer = "";
-    private int    mCurrentPort   = 0;
+        public void onServiceDisconnected(ComponentName name) {
+            vpnServiceInterface = null;
+            stopStatusCheck();
+        }
+    };
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) return START_STICKY;
-
-        final String   name      = intent.getStringExtra(INTENT_NAME);
-        final String   server    = intent.getStringExtra(INTENT_SERVER);
-        final int      port      = intent.getIntExtra(INTENT_PORT, 1080);
-        final String   username  = intent.getStringExtra(INTENT_USERNAME);
-        final String   passwd    = intent.getStringExtra(INTENT_PASSWORD);
-        final String   route     = intent.getStringExtra(INTENT_ROUTE);
-        final String   dns       = intent.getStringExtra(INTENT_DNS);
-        final int      dnsPort   = intent.getIntExtra(INTENT_DNS_PORT, 53);
-        final boolean  perApp    = intent.getBooleanExtra(INTENT_PER_APP, false);
-        final boolean  appBypass = intent.getBooleanExtra(INTENT_APP_BYPASS, false);
-        final String[] appList   = intent.getStringArrayExtra(INTENT_APP_LIST);
-        final boolean  ipv6      = intent.getBooleanExtra(INTENT_IPV6_PROXY, false);
-        final String   udpgw     = intent.getStringExtra(INTENT_UDP_GW);
-
-        if (mRunning && (!server.equals(mCurrentServer) || port != mCurrentPort)) {
-            Log.d(TAG, "Different server detected, stopping old connection");
-            stopMe();
-            mRunning       = false;
-            mCurrentServer = "";
-            mCurrentPort   = 0;
-        }
-
-        if (mRunning) {
-            Log.d(TAG, "Already connected to " + server + ":" + port);
+        if (intent == null) {
+            restorePreviousState();
             return START_STICKY;
         }
 
-        mCurrentServer = server;
-        mCurrentPort   = port;
+        String action = intent.getAction();
 
-        // --- Notification ---
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= 26) {
-            String NOTIFICATION_CHANNEL_ID = "com.socks5setter";
-            NotificationChannel channel = new NotificationChannel(
-                NOTIFICATION_CHANNEL_ID, "Socks5 VPN", NotificationManager.IMPORTANCE_NONE);
-            NotificationManager notificationManager = getSystemService(NotificationManager.class);
-            Objects.requireNonNull(notificationManager).createNotificationChannel(channel);
-            builder = new Notification.Builder(this, NOTIFICATION_CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(this);
-        }
-
-        int intentFlags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            intentFlags |= PendingIntent.FLAG_IMMUTABLE;
-        }
-
-        PendingIntent contentIntent = PendingIntent.getActivity(this, 0,
-            new Intent(this, com.socks5setter.MainActivity.class), intentFlags);
-
-        startForeground(1, builder
-            .setContentTitle("SOCKS5 Proxy")
-            .setContentText("Conectado a " + server)
-            .setPriority(Notification.PRIORITY_MIN)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentIntent(contentIntent)
-            .build());
-
-        configure(name, route, perApp, appBypass, appList, ipv6);
-
-        if (mInterface == null) {
-            Log.e(TAG, "Failed to establish VPN interface");
-            stopMe();
+        if (ACTION_STOP.equals(action)) {
+            teardownAll();
+            stopSelf();
             return START_NOT_STICKY;
         }
 
-        if (!start(mInterface.getFd(), server, port, username, passwd, dns, dnsPort, ipv6, udpgw)) {
-            Log.e(TAG, "Failed to start VPN tunnel");
-            stopMe();
-            return START_NOT_STICKY;
+        if (ACTION_SET_BYPASS.equals(action)) {
+            boolean bypass = intent.getBooleanExtra(EXTRA_BYPASS, false);
+            applyBypass(bypass);
+            return START_STICKY;
         }
 
-        Log.d(TAG, "VPN Connection established successfully");
-
+        restorePreviousState();
         return START_STICKY;
     }
 
-    @Override
-    public void onRevoke() {
-        super.onRevoke();
-        stopMe();
+    private void restorePreviousState() {
+        SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
+        boolean bypass = prefs.getBoolean("bypass_mode", false);
+        applyBypass(bypass);
     }
 
-    @Override
-    public IBinder onBind(Intent intent) {
-        return mBinder;
+    private void applyBypass(boolean bypass) {
+        teardownProxy();
+        closeBypassTunnel();
+
+        if (bypass) {
+            startBypassTunnel();
+        } else {
+            startProxyTunnel();
+        }
     }
+
+    /**
+     * Modo bypass — VPN activa pero tráfico por red real (IP propia).
+     *
+     * allowBypass() le dice a Android que las apps pueden optar por salir
+     * fuera del túnel usando sockets normales. Como NO arrancamos tun2socks,
+     * ningún proceso está leyendo el tun fd — Android detecta que el túnel
+     * no procesa nada y deja pasar el tráfico por la red física directamente.
+     *
+     * El perfil VPN sigue activo (icono de llave), cumple "VPN siempre activado"
+     * y "Bloquear conexiones sin VPN", pero el tráfico usa la IP real.
+     */
+    private void startBypassTunnel() {
+        try {
+            Builder b = new Builder();
+            b.setMtu(1500)
+             .setSession("SOCKS5 VPN")
+             .addAddress("10.0.0.1", 30)
+             .addDnsServer("8.8.8.8")
+             .addRoute("0.0.0.0", 0)
+             .allowBypass();   // ← clave: permite tráfico fuera del túnel
+
+            bypassPfd = b.establish();
+            Log.d(TAG, bypassPfd != null ? "Bypass tunnel activo" : "Error creando bypass tunnel");
+        } catch (Exception e) {
+            Log.e(TAG, "startBypassTunnel error: " + e.getMessage());
+        }
+    }
+
+    private void closeBypassTunnel() {
+        if (bypassPfd != null) {
+            try { bypassPfd.close(); } catch (Exception ignored) {}
+            bypassPfd = null;
+        }
+    }
+
+    private void startProxyTunnel() {
+        SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
+        String host = prefs.getString("host", "");
+        int    port = prefs.getInt("port", 1080);
+        String user = prefs.getString("user", "");
+        String pass = prefs.getString("pass", "");
+
+        if (host == null || host.isEmpty()) {
+            Log.w(TAG, "Sin proxy, arrancando bypass tunnel temporal");
+            startBypassTunnel();
+            return;
+        }
+
+        Intent intent = new Intent(this, net.typeblog.socks.SocksVpnService.class);
+        intent.putExtra(Constants.INTENT_NAME,       "SOCKS5 Proxy");
+        intent.putExtra(Constants.INTENT_SERVER,     host);
+        intent.putExtra(Constants.INTENT_PORT,       port);
+        intent.putExtra(Constants.INTENT_USERNAME,   user);
+        intent.putExtra(Constants.INTENT_PASSWORD,   pass);
+        intent.putExtra(Constants.INTENT_ROUTE,      "bypass-lan");
+        intent.putExtra(Constants.INTENT_DNS,        "8.8.8.8");
+        intent.putExtra(Constants.INTENT_DNS_PORT,   53);
+        intent.putExtra(Constants.INTENT_IPV6_PROXY, false);
+
+        startService(intent);
+        bindService(
+            new Intent(this, net.typeblog.socks.SocksVpnService.class),
+            serviceConnection, BIND_AUTO_CREATE
+        );
+        Log.d(TAG, "Proxy tunnel arrancado: " + host + ":" + port);
+    }
+
+    private void teardownProxy() {
+        stopStatusCheck();
+        try { unbindService(serviceConnection); } catch (Exception ignored) {}
+        vpnServiceInterface = null;
+        stopService(new Intent(this, net.typeblog.socks.SocksVpnService.class));
+    }
+
+    private void teardownAll() {
+        teardownProxy();
+        closeBypassTunnel();
+        getSharedPreferences("proxy_config", MODE_PRIVATE)
+            .edit()
+            .putBoolean("connected",   false)
+            .putBoolean("bypass_mode", false)
+            .apply();
+    }
+
+    private void startStatusCheck() {
+        stopStatusCheck();
+        statusCheckRunnable = new Runnable() {
+            @Override public void run() {
+                checkStatus();
+                handler.postDelayed(this, 5000);
+            }
+        };
+        handler.post(statusCheckRunnable);
+    }
+
+    private void stopStatusCheck() {
+        if (statusCheckRunnable != null) {
+            handler.removeCallbacks(statusCheckRunnable);
+            statusCheckRunnable = null;
+        }
+    }
+
+    private void checkStatus() {
+        SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
+        if (prefs.getBoolean("bypass_mode", false)) return;
+        if (vpnServiceInterface == null) return;
+        try {
+            boolean running      = vpnServiceInterface.isRunning();
+            boolean wasConnected = prefs.getBoolean("connected", false);
+            if (running && !wasConnected)
+                prefs.edit().putBoolean("connected", true).apply();
+            else if (!running && wasConnected)
+                prefs.edit().putBoolean("connected", false).apply();
+        } catch (Exception e) {
+            Log.e(TAG, "checkStatus: " + e.getMessage());
+        }
+    }
+
+    @Override public IBinder onBind(Intent intent) { return null; }
 
     @Override
     public void onDestroy() {
+        stopStatusCheck();
+        closeBypassTunnel();
+        try { unbindService(serviceConnection); } catch (Exception ignored) {}
         super.onDestroy();
-        stopMe();
-    }
-
-    private void stopMe() {
-        stopForeground(true);
-        Utility.killPidFile(getFilesDir() + "/tun2socks.pid");
-        Utility.killPidFile(getFilesDir() + "/pdnsd.pid");
-        try {
-            System.jniclose(mInterface.getFd());
-            mInterface.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        mRunning       = false;
-        mCurrentServer = "";
-        mCurrentPort   = 0;
-        stopSelf();
-    }
-
-    private void configure(String name, String route, boolean perApp,
-                           boolean bypass, String[] apps, boolean ipv6) {
-        Builder b = new Builder();
-        b.setMtu(1500)
-            .setSession(name != null ? name : "Socks5VPN")
-            .addAddress("26.26.26.1", 24)
-            .addDnsServer("8.8.8.8");
-
-        if (ipv6) {
-            b.addAddress("fdfe:dcba:9876::1", 126)
-                .addRoute("::", 0);
-        }
-
-        Routes.addRoutes(this, b, route);
-        b.addRoute("8.8.8.8", 32);
-
-        // La app principal se excluye del túnel para que pueda comunicarse
-        // con el Service sin pasar por él, pero el Service mismo (este proceso)
-        // SÍ pasa por el túnel → el fetch de IP pública mostrará la IP del proxy.
-        if (!perApp) {
-            try {
-                b.addDisallowedApplication("com.socks5setter");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        } else {
-            if (bypass) {
-                try {
-                    b.addDisallowedApplication("com.socks5setter");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                for (String p : apps) {
-                    if (TextUtils.isEmpty(p)) continue;
-                    try { b.addDisallowedApplication(p.trim()); }
-                    catch (Exception e) { e.printStackTrace(); }
-                }
-            } else {
-                for (String p : apps) {
-                    if (TextUtils.isEmpty(p) || p.trim().equals("com.socks5setter")) continue;
-                    try { b.addAllowedApplication(p.trim()); }
-                    catch (Exception e) { e.printStackTrace(); }
-                }
-            }
-        }
-
-        mInterface = b.establish();
-    }
-
-    private boolean start(int fd, String server, int port, String user, String passwd,
-                          String dns, int dnsPort, boolean ipv6, String udpgw) {
-        Utility.makePdnsdConf(this, dns, dnsPort);
-
-        if (Utility.exec(String.format(Locale.US, "%s/libpdnsd.so -c %s/pdnsd.conf",
-                getApplicationInfo().nativeLibraryDir, getFilesDir())) != 0) {
-            Log.e(TAG, "Failed to start pdnsd");
-            return false;
-        }
-
-        String command = String.format(Locale.US,
-            "%s/libtun2socks.so --netif-ipaddr 26.26.26.2"
-                + " --netif-netmask 255.255.255.0"
-                + " --socks-server-addr %s:%d"
-                + " --tunfd %d"
-                + " --tunmtu 1500"
-                + " --loglevel 3"
-                + " --pid %s/tun2socks.pid"
-                + " --sock %s/sock_path",
-            getApplicationInfo().nativeLibraryDir, server, port, fd,
-            getFilesDir(), getApplicationInfo().dataDir);
-
-        if (user != null) {
-            command += " --username " + user;
-            command += " --password " + passwd;
-        }
-
-        if (ipv6) {
-            command += " --netif-ip6addr fdfe:dcba:9876::2";
-        }
-
-        command += " --dnsgw 26.26.26.1:8091";
-
-        if (udpgw != null) {
-            command += " --udpgw-remote-server-addr " + udpgw;
-        }
-
-        if (Utility.exec(command) != 0) {
-            Log.e(TAG, "Failed to execute tun2socks");
-            return false;
-        }
-
-        int i = 0;
-        while (i < 5) {
-            if (System.sendfd(fd, getApplicationInfo().dataDir + "/sock_path") != -1) {
-                mRunning = true;
-                Log.d(TAG, "Successfully sent file descriptor to native process");
-                return true;
-            }
-            i++;
-            try { Thread.sleep(1000L * i); } catch (Exception e) { e.printStackTrace(); }
-        }
-
-        Log.e(TAG, "Failed to send file descriptor to native process after 5 attempts");
-        return false;
     }
 }

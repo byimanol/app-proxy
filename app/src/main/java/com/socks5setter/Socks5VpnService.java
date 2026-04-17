@@ -24,9 +24,7 @@ public class Socks5VpnService extends VpnService {
     private IVpnService          vpnServiceInterface;
     private Handler              handler = new Handler(Looper.getMainLooper());
     private Runnable             statusCheckRunnable;
-
     private ParcelFileDescriptor bypassPfd;
-    private BypassForwarder      bypassForwarder;
 
     private ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
@@ -44,6 +42,7 @@ public class Socks5VpnService extends VpnService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
+            // Reinicio del sistema — restaurar estado previo
             restorePreviousState();
             return START_STICKY;
         }
@@ -51,6 +50,8 @@ public class Socks5VpnService extends VpnService {
         String action = intent.getAction();
 
         if (ACTION_STOP.equals(action)) {
+            // Esto ya no "desconecta" visualmente — solo mata el servicio
+            // completamente (usado internamente)
             teardownAll();
             stopSelf();
             return START_NOT_STICKY;
@@ -62,19 +63,27 @@ public class Socks5VpnService extends VpnService {
             return START_STICKY;
         }
 
+        // Arranque normal
         restorePreviousState();
         return START_STICKY;
     }
 
+    /** Al arrancar, leer el estado guardado y aplicarlo */
     private void restorePreviousState() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
         boolean bypass = prefs.getBoolean("bypass_mode", false);
         applyBypass(bypass);
     }
 
+    // ------------------------------------------------------------------
+    // BYPASS toggle
+    // bypass=true  → túnel vacío, tráfico por red real, UI dice "Desconectado"
+    // bypass=false → túnel SOCKS5 activo, tráfico por proxy, UI dice "Conectado"
+    // ------------------------------------------------------------------
     private void applyBypass(boolean bypass) {
         teardownProxy();
         closeBypassTunnel();
+
         if (bypass) {
             startBypassTunnel();
         } else {
@@ -82,50 +91,40 @@ public class Socks5VpnService extends VpnService {
         }
     }
 
-    /**
-     * Modo bypass — tráfico por red real usando IP del dispositivo.
-     *
-     * 1. Túnel VPN con ruta 0.0.0.0/0  →  satisface "Bloquear conexiones sin VPN"
-     * 2. BypassForwarder lee paquetes del tun fd y los reenvía con sockets
-     *    protect()-ados  →  salen por la red física, SIN pasar por proxy SOCKS5
-     */
+    /** Túnel VPN vacío — sin rutas → tráfico sale por red real */
     private void startBypassTunnel() {
         try {
             Builder b = new Builder();
             b.setMtu(1500)
              .setSession("SOCKS5 VPN")
-             .addAddress("10.0.0.1", 30)
+             .addAddress("26.26.26.1", 24)
              .addDnsServer("8.8.8.8")
-             .addDnsServer("1.1.1.1")
-             .addRoute("0.0.0.0", 0);
+             .addRoute("0.0.0.0", 0)        // capturar todo el tráfico
+             .allowBypass();                 // pero permitir que salga por red real
 
-            bypassPfd = b.establish();
-
-            if (bypassPfd == null) {
-                Log.e(TAG, "No se pudo establecer el bypass tunnel");
-                return;
+            // Excluir TODAS las apps del túnel → tráfico sale por red real
+            // Esto es equivalente a "bypass total" sin romper el túnel VPN
+            for (android.content.pm.ApplicationInfo app :
+                    getPackageManager().getInstalledApplications(0)) {
+                try { b.addDisallowedApplication(app.packageName); }
+                catch (Exception ignored) {}
             }
 
-            bypassForwarder = new BypassForwarder(this, bypassPfd);
-            bypassForwarder.start();
-
-            Log.d(TAG, "Bypass tunnel activo con BypassForwarder");
+            bypassPfd = b.establish();
+            Log.d(TAG, bypassPfd != null ? "Bypass tunnel activo" : "Error creando bypass tunnel");
         } catch (Exception e) {
             Log.e(TAG, "startBypassTunnel error: " + e.getMessage());
         }
     }
 
     private void closeBypassTunnel() {
-        if (bypassForwarder != null) {
-            bypassForwarder.stop();
-            bypassForwarder = null;
-        }
         if (bypassPfd != null) {
             try { bypassPfd.close(); } catch (Exception ignored) {}
             bypassPfd = null;
         }
     }
 
+    /** Túnel SOCKS5 real vía tun2socks */
     private void startProxyTunnel() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
         String host = prefs.getString("host", "");
@@ -134,6 +133,7 @@ public class Socks5VpnService extends VpnService {
         String pass = prefs.getString("pass", "");
 
         if (host == null || host.isEmpty()) {
+            // Sin proxy todavía → bypass tunnel para mantener el icono de llave
             Log.w(TAG, "Sin proxy, arrancando bypass tunnel temporal");
             startBypassTunnel();
             return;
@@ -175,6 +175,7 @@ public class Socks5VpnService extends VpnService {
             .apply();
     }
 
+    // ------------------------------------------------------------------
     private void startStatusCheck() {
         stopStatusCheck();
         statusCheckRunnable = new Runnable() {
@@ -195,7 +196,8 @@ public class Socks5VpnService extends VpnService {
 
     private void checkStatus() {
         SharedPreferences prefs = getSharedPreferences("proxy_config", MODE_PRIVATE);
-        if (prefs.getBoolean("bypass_mode", false)) return;
+        if (prefs.getBoolean("bypass_mode", false)) return; // bypass no necesita check
+
         if (vpnServiceInterface == null) return;
         try {
             boolean running      = vpnServiceInterface.isRunning();
