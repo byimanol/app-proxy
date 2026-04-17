@@ -98,8 +98,17 @@ public class Socks5VpnService extends VpnService {
             b.setMtu(1500)
              .setSession("SOCKS5 VPN")
              .addAddress("26.26.26.1", 24)
-             .addDnsServer("8.8.8.8");
-            // Sin addRoute() → ningún paquete lo atraviesa
+             .addDnsServer("8.8.8.8")
+             .addRoute("0.0.0.0", 0)        // capturar todo el tráfico
+             .allowBypass();                 // pero permitir que salga por red real
+
+            // Excluir TODAS las apps del túnel → tráfico sale por red real
+            // Esto es equivalente a "bypass total" sin romper el túnel VPN
+            for (android.content.pm.ApplicationInfo app :
+                    getPackageManager().getInstalledApplications(0)) {
+                try { b.addDisallowedApplication(app.packageName); }
+                catch (Exception ignored) {}
+            }
 
             bypassPfd = b.establish();
             Log.d(TAG, bypassPfd != null ? "Bypass tunnel activo" : "Error creando bypass tunnel");
