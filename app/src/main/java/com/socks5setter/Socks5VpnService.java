@@ -91,24 +91,24 @@ public class Socks5VpnService extends VpnService {
         }
     }
 
-    /** Túnel VPN vacío — sin rutas → tráfico sale por red real */
+    /**
+     * Modo bypass — VPN activa pero tráfico por red real (IP propia).
+     *
+     * allowBypass() es suficiente: le indica a Android que el tráfico puede
+     * salir fuera del túnel por la red física. Como tun2socks NO está corriendo,
+     * nadie procesa el tun fd y el tráfico fluye directo con la IP real.
+     * Funciona aunque "Bloquear conexiones sin VPN" esté ON.
+     */
     private void startBypassTunnel() {
         try {
             Builder b = new Builder();
             b.setMtu(1500)
              .setSession("SOCKS5 VPN")
-             .addAddress("26.26.26.1", 24)
+             .addAddress("10.0.0.1", 30)
              .addDnsServer("8.8.8.8")
-             .addRoute("0.0.0.0", 0)        // capturar todo el tráfico
-             .allowBypass();                 // pero permitir que salga por red real
-
-            // Excluir TODAS las apps del túnel → tráfico sale por red real
-            // Esto es equivalente a "bypass total" sin romper el túnel VPN
-            for (android.content.pm.ApplicationInfo app :
-                    getPackageManager().getInstalledApplications(0)) {
-                try { b.addDisallowedApplication(app.packageName); }
-                catch (Exception ignored) {}
-            }
+             .addDnsServer("1.1.1.1")
+             .addRoute("0.0.0.0", 0)
+             .allowBypass();
 
             bypassPfd = b.establish();
             Log.d(TAG, bypassPfd != null ? "Bypass tunnel activo" : "Error creando bypass tunnel");
